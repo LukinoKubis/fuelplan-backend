@@ -24,8 +24,8 @@ app.use((req, res, next) => {
   } else {
     res.setHeader('Access-Control-Allow-Origin', allowed[0]);
   }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -53,6 +53,116 @@ function validateCode(code) {
   if (!code) return false;
   return getValidCodes().includes(code.trim().toUpperCase());
 }
+
+// ── Admin middleware ──────────────────────────────────────────────────────────
+function requireAdmin(req, res, next) {
+  const key = req.headers['x-admin-key'] || req.body?.adminKey;
+  const adminKey = process.env.ADMIN_KEY;
+  if (!adminKey || key !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// ── Admin: get all codes with stats ──────────────────────────────────────────
+app.post('/api/admin/codes', requireAdmin, async (req, res) => {
+  const codes = getValidCodes();
+  const results = await Promise.all(codes.map(async (code) => {
+    const remaining = await getRemaining(code);
+    const history = await getHistory(code);
+    const lastPlan = history[0] || null;
+    return {
+      code,
+      remaining: remaining ?? '—',
+      plansUsed: history.length,
+      lastUsed: lastPlan ? lastPlan.savedAt : null,
+      lastUser: lastPlan ? lastPlan.userName : null,
+    };
+  }));
+  return res.json({ codes: results });
+});
+
+// ── Admin: set remaining plans for a code ────────────────────────────────────
+app.post('/api/admin/set-remaining', requireAdmin, async (req, res) => {
+  const { code, amount } = req.body;
+  if (!code || amount === undefined) return res.status(400).json({ error: 'code and amount required' });
+  const c = code.trim().toUpperCase();
+  if (!validateCode(c)) return res.status(404).json({ error: 'Code not found in ACTIVATION_CODES env var' });
+  await setRemaining(c, parseInt(amount));
+  return res.json({ ok: true, code: c, remaining: parseInt(amount) });
+});
+
+// ── Admin: add a new code (appends to env note — Railway must be updated manually) ─
+// Since we can't edit env vars at runtime, this endpoint returns instructions
+// and sets the Redis key so the code works immediately once added to env
+app.post('/api/admin/create-code', requireAdmin, async (req, res) => {
+  const { code, plans } = req.body;
+  if (!code) return res.status(400).json({ error: 'code required' });
+  const c = code.trim().toUpperCase();
+  const planCount = parseInt(plans) || parseInt(process.env.DEFAULT_PLAN_LIMIT) || 10;
+  // Pre-set Redis so it's ready the moment the code is added to env
+  await setRemaining(c, planCount);
+  return res.json({
+    ok: true,
+    code: c,
+    plans: planCount,
+    action: `Add "${c}" to your ACTIVATION_CODES env var in Railway, then redeploy.`
+  });
+});
+
+// ── Admin: delete/revoke a code (zeros out remaining) ────────────────────────
+app.post('/api/admin/revoke-code', requireAdmin, async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: 'code required' });
+  const c = code.trim().toUpperCase();
+  await setRemaining(c, 0);
+  return res.json({ ok: true, code: c, message: 'Code revoked — remaining set to 0' });
+});
+
+// ── Admin: get full history for a code ───────────────────────────────────────
+app.post('/api/admin/history', requireAdmin, async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: 'code required' });
+  const c = code.trim().toUpperCase();
+  const history = await getHistory(c);
+  return res.json({ history });
+});
+
+// ── Admin: stats overview ─────────────────────────────────────────────────────
+app.post('/api/admin/stats', requireAdmin, async (req, res) => {
+  const codes = getValidCodes();
+  let totalPlansGenerated = 0;
+  let activeCodes = 0;
+  let codesNearLimit = 0;
+  const activity = [];
+
+  await Promise.all(codes.map(async (code) => {
+    const remaining = await getRemaining(code);
+    const history = await getHistory(code);
+    totalPlansGenerated += history.length;
+    if (history.length > 0) activeCodes++;
+    if (remaining !== null && remaining <= 2 && remaining > 0) codesNearLimit++;
+    history.forEach(h => activity.push({ code, savedAt: h.savedAt, userName: h.userName }));
+  }));
+
+  // Sort activity by date desc, take last 10
+  activity.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+
+  return res.json({
+    totalCodes: codes.length,
+    activeCodes,
+    totalPlansGenerated,
+    codesNearLimit,
+    recentActivity: activity.slice(0, 10)
+  });
+});
+
+const path = require('path');
+
+// ── Serve admin dashboard ─────────────────────────────────────────────────────
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin.html'));
+});
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

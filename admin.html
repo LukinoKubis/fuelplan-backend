@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e0f11">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FP Admin">
+<title>FUELPLAN Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --lime: #c8f542;
+  --lime-dim: rgba(200,245,66,0.12);
+  --bg: #0e0f11;
+  --bg2: #13151a;
+  --card: #1e2128;
+  --card2: #252830;
+  --border: #2a2d35;
+  --border2: #363a46;
+  --text: #f0f2f5;
+  --muted: #7a8099;
+  --red: #ff5757;
+  --red-dim: rgba(255,87,87,0.12);
+  --orange: #ff9a42;
+  --orange-dim: rgba(255,154,66,0.12);
+  --blue: #57a9ff;
+  --blue-dim: rgba(87,169,255,0.12);
+  --green: #4cd97b;
+  --green-dim: rgba(76,217,123,0.12);
+}
+
+html { background: var(--bg); }
+
+body {
+  font-family: 'Figtree', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: 40px;
+}
+
+/* ── LOGIN ── */
+#login-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+}
+
+.login-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.login-logo svg rect { fill: var(--lime); }
+.login-logo svg path { fill: #0e0f11; }
+
+.login-logo-text {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.15em;
+  color: var(--lime);
+}
+
+.login-tag {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 40px;
+}
+
+.login-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px 24px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.login-label {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.login-input {
+  width: 100%;
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: 'Figtree', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 14px 16px;
+  outline: none;
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin-bottom: 16px;
+  transition: border-color 0.2s;
+}
+.login-input:focus { border-color: var(--lime); }
+
+.login-input-wrap { position: relative; }
+.login-eye {
+  position: absolute;
+  right: 14px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); padding: 4px;
+}
+
+.btn-login {
+  width: 100%;
+  background: var(--lime);
+  color: #0e0f11;
+  border: none;
+  border-radius: 12px;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-login:hover { background: #d8ff5a; }
+.btn-login:active { transform: scale(0.98); }
+
+.login-error {
+  color: var(--red);
+  font-size: 12px;
+  text-align: center;
+  margin-top: 12px;
+  min-height: 18px;
+}
+
+/* ── MAIN APP ── */
+#app { display: none; }
+
+/* ── HEADER ── */
+.header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: calc(env(safe-area-inset-top) + 14px) 20px 14px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-logo-text {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.15em;
+  color: var(--lime);
+}
+
+.header-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 9px;
+}
+
+.btn-refresh {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: 'Figtree', sans-serif;
+  font-weight: 500;
+  display: flex; align-items: center; gap: 6px;
+  transition: all 0.15s;
+}
+.btn-refresh:hover { border-color: var(--border2); color: var(--text); }
+.btn-refresh svg { transition: transform 0.4s; }
+.btn-refresh.spinning svg { animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── CONTENT ── */
+.content {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── STAT CARDS ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.stat-val {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── SECTION HEADER ── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── CODES TABLE ── */
+.codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.code-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: border-color 0.15s;
+}
+
+.code-row:hover { border-color: var(--border2); }
+
+.code-status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.code-name {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  flex: 1;
+}
+
+.code-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.code-remaining {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  text-align: right;
+}
+
+.code-remaining-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-align: right;
+  letter-spacing: 0.08em;
+}
+
+.code-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-icon {
+  width: 32px; height: 32px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.btn-icon:hover { border-color: var(--border2); color: var(--text); }
+.btn-icon.danger:hover { border-color: rgba(255,87,87,0.5); color: var(--red); background: var(--red-dim); }
+.btn-icon.success:hover { border-color: rgba(76,217,123,0.5); color: var(--green); background: var(--green-dim); }
+
+/* ── ACTIVITY FEED ── */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.activity-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.activity-item:last-child { border-bottom: none; }
+
+.activity-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--lime);
+  flex-shrink: 0;
+}
+
+.activity-text {
+  flex: 1;
+  font-size: 13px;
+}
+
+.activity-code {
+  font-weight: 600;
+  color: var(--lime);
+}
+
+.activity-time {
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ── CREATE CODE SECTION ── */
+.create-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.create-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.field input {
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Figtree', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+.field input:focus { border-color: var(--lime); }
+.field input::placeholder { color: var(--muted); }
+
+.field-code { flex: 1; }
+.field-plans { width: 90px; }
+
+.btn-create {
+  background: var(--lime);
+  color: #0e0f11;
+  border: none;
+  border-radius: 10px;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 11px 18px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  height: 44px;
+}
+.btn-create:hover { background: #d8ff5a; }
+.btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.create-result {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  display: none;
+}
+
+.create-result.success {
+  background: var(--green-dim);
+  border: 1px solid rgba(76,217,123,0.3);
+  color: var(--green);
+  display: block;
+}
+
+.create-result.error {
+  background: var(--red-dim);
+  border: 1px solid rgba(255,87,87,0.3);
+  color: var(--red);
+  display: block;
+}
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 800;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 24px;
+  width: 100%;
+  max-width: 340px;
+  transform: translateY(16px);
+  transition: transform 0.25s cubic-bezier(.22,1,.36,1);
+}
+.modal-overlay.open .modal { transform: translateY(0); }
+
+.modal-title {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.modal-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.modal-field label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.modal-field input {
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Figtree', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.modal-field input:focus { border-color: var(--lime); }
+
+.modal-btns {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-cancel {
+  flex: 1;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-family: 'Figtree', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-cancel:hover { color: var(--text); }
+
+.btn-confirm {
+  flex: 1;
+  background: var(--lime);
+  border: none;
+  border-radius: 10px;
+  color: #0e0f11;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-confirm:hover { background: #d8ff5a; }
+.btn-confirm.danger { background: var(--red); color: #fff; }
+.btn-confirm.danger:hover { background: #ff7474; }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 24px);
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--card);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 11px 20px;
+  border-radius: 40px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 9999;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(.22,1,.36,1);
+  white-space: nowrap;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── EMPTY STATE ── */
+.empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div class="login-logo">
+    <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="48" height="48" rx="14" fill="#c8f542"/>
+      <path d="M25 7L13 27h12l-4 14 18-22H27L31 7H25z" fill="#0e0f11"/>
+    </svg>
+    <span class="login-logo-text">FUELPLAN</span>
+  </div>
+  <div class="login-tag">Admin Dashboard</div>
+
+  <div class="login-card">
+    <div class="login-label">Backend URL</div>
+    <input class="login-input" id="login-url" type="url" placeholder="https://your-app.railway.app" autocomplete="off" autocapitalize="off">
+    <div class="login-label">Admin Key</div>
+    <div class="login-input-wrap">
+      <input class="login-input" id="login-key" type="password" placeholder="your-secret-key" autocomplete="off">
+      <button class="login-eye" onclick="toggleKeyVisibility()" id="eye-btn">
+        <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <button class="btn-login" onclick="login()">Sign In</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-logo">
+        <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
+          <rect width="48" height="48" rx="14" fill="#c8f542"/>
+          <path d="M25 7L13 27h12l-4 14 18-22H27L31 7H25z" fill="#0e0f11"/>
+        </svg>
+        <span class="header-logo-text">FUELPLAN</span>
+        <span class="header-badge">Admin</span>
+      </div>
+      <button class="btn-refresh" onclick="refreshAll()" id="refresh-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-5.96"/></svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- Stats overview -->
+    <div>
+      <div class="section-header">
+        <span class="section-title">Overview</span>
+      </div>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="stat-total-codes" style="color:var(--lime)">—</div>
+          <div class="stat-label">Total Codes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-plans-generated" style="color:var(--blue)">—</div>
+          <div class="stat-label">Plans Generated</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-active-codes" style="color:var(--green)">—</div>
+          <div class="stat-label">Active Codes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-low-codes" style="color:var(--orange)">—</div>
+          <div class="stat-label">Low on Plans</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create new code -->
+    <div>
+      <div class="section-header">
+        <span class="section-title">New Activation Code</span>
+      </div>
+      <div class="create-card">
+        <div class="create-row">
+          <div class="field field-code">
+            <label>Code</label>
+            <input type="text" id="new-code" placeholder="FUEL-XXXX" autocapitalize="characters" oninput="this.value = this.value.toUpperCase()">
+          </div>
+          <div class="field field-plans">
+            <label>Plans</label>
+            <input type="number" id="new-plans" placeholder="10" min="1" max="999" value="10">
+          </div>
+          <button class="btn-create" onclick="createCode()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Create
+          </button>
+        </div>
+        <div class="create-result" id="create-result"></div>
+      </div>
+    </div>
+
+    <!-- All codes -->
+    <div>
+      <div class="section-header">
+        <span class="section-title">Activation Codes</span>
+      </div>
+      <div class="codes-list" id="codes-list">
+        <div class="empty">Loading codes…</div>
+      </div>
+    </div>
+
+    <!-- Recent activity -->
+    <div>
+      <div class="section-header">
+        <span class="section-title">Recent Activity</span>
+      </div>
+      <div id="activity-list">
+        <div class="empty">Loading activity…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Edit Plans Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-title">Edit Plans</div>
+    <div class="modal-sub" id="edit-modal-sub">Set remaining plans for this code</div>
+    <div class="modal-field">
+      <label>Remaining Plans</label>
+      <input type="number" id="edit-amount" min="0" max="999" placeholder="10">
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('edit-modal')">Cancel</button>
+      <button class="btn-confirm" onclick="confirmEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Revoke Modal -->
+<div class="modal-overlay" id="revoke-modal">
+  <div class="modal">
+    <div class="modal-title">Revoke Code</div>
+    <div class="modal-sub" id="revoke-modal-sub">This will set remaining plans to 0. The code stays in your env — it just stops working.</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('revoke-modal')">Cancel</button>
+      <button class="btn-confirm danger" onclick="confirmRevoke()">Revoke</button>
+    </div>
+  </div>
+</div>
+
+<!-- Top Up Modal -->
+<div class="modal-overlay" id="topup-modal">
+  <div class="modal">
+    <div class="modal-title">Top Up Plans</div>
+    <div class="modal-sub" id="topup-modal-sub">Add more plans to this code</div>
+    <div class="modal-field">
+      <label>Add Plans</label>
+      <input type="number" id="topup-amount" min="1" max="999" placeholder="10">
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('topup-modal')">Cancel</button>
+      <button class="btn-confirm" onclick="confirmTopUp()">Top Up</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'fp_admin_config';
+let API_BASE = '';
+let ADMIN_KEY = '';
+let currentEditCode = '';
+let currentEditRemaining = 0;
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+function toggleKeyVisibility() {
+  const input = document.getElementById('login-key');
+  const icon = document.getElementById('eye-icon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+  } else {
+    input.type = 'password';
+    icon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  }
+}
+
+async function login() {
+  const url = document.getElementById('login-url').value.trim().replace(/\/$/, '');
+  const key = document.getElementById('login-key').value.trim();
+  const errEl = document.getElementById('login-error');
+
+  if (!url || !key) { errEl.textContent = 'Enter both URL and admin key'; return; }
+
+  errEl.textContent = '';
+  const btn = document.querySelector('.btn-login');
+  btn.textContent = 'Connecting…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(url + '/api/admin/stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+      body: JSON.stringify({ adminKey: key })
+    });
+
+    if (res.status === 401) throw new Error('Wrong admin key');
+    if (!res.ok) throw new Error('Cannot reach backend — check URL');
+
+    // Save to localStorage
+    API_BASE = url;
+    ADMIN_KEY = key;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ url, key })); } catch(e) {}
+
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    loadAll();
+
+  } catch (err) {
+    errEl.textContent = err.message;
+  } finally {
+    btn.textContent = 'Sign In';
+    btn.disabled = false;
+  }
+}
+
+// Auto-login if saved
+window.addEventListener('DOMContentLoaded', () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    if (saved.url && saved.key) {
+      document.getElementById('login-url').value = saved.url;
+      document.getElementById('login-key').value = saved.key;
+    }
+  } catch(e) {}
+
+  document.getElementById('login-key').addEventListener('keydown', e => {
+    if (e.key === 'Enter') login();
+  });
+});
+
+// ── API CALLS ─────────────────────────────────────────────────────────────────
+async function api(endpoint, body = {}) {
+  const res = await fetch(API_BASE + endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+    body: JSON.stringify({ adminKey: ADMIN_KEY, ...body })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Request failed');
+  }
+  return res.json();
+}
+
+// ── LOAD DATA ─────────────────────────────────────────────────────────────────
+async function loadAll() {
+  await Promise.all([loadStats(), loadCodes()]);
+}
+
+async function loadStats() {
+  try {
+    const data = await api('/api/admin/stats');
+    document.getElementById('stat-total-codes').textContent = data.totalCodes;
+    document.getElementById('stat-plans-generated').textContent = data.totalPlansGenerated;
+    document.getElementById('stat-active-codes').textContent = data.activeCodes;
+    document.getElementById('stat-low-codes').textContent = data.codesNearLimit;
+    renderActivity(data.recentActivity || []);
+  } catch(err) {
+    toast('Failed to load stats');
+  }
+}
+
+async function loadCodes() {
+  const listEl = document.getElementById('codes-list');
+  try {
+    const data = await api('/api/admin/codes');
+    renderCodes(data.codes || []);
+  } catch(err) {
+    listEl.innerHTML = '<div class="empty">Failed to load codes</div>';
+  }
+}
+
+function renderCodes(codes) {
+  const listEl = document.getElementById('codes-list');
+  if (!codes.length) {
+    listEl.innerHTML = '<div class="empty">No codes found.<br>Add codes to ACTIVATION_CODES in Railway.</div>';
+    return;
+  }
+
+  listEl.innerHTML = codes.map(c => {
+    const rem = typeof c.remaining === 'number' ? c.remaining : null;
+    const color = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem <= 2 ? 'var(--orange)' : rem <= 5 ? 'var(--blue)' : 'var(--lime)';
+    const dotColor = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem > 0 ? 'var(--green)' : 'var(--muted)';
+    const lastUsedStr = c.lastUsed
+      ? new Date(c.lastUsed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : 'Never used';
+
+    return `
+      <div class="code-row">
+        <div class="code-status-dot" style="background:${dotColor}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="code-name">${escHtml(c.code)}</div>
+          <div class="code-meta">${c.plansUsed} plans generated · ${lastUsedStr}${c.lastUser ? ' · ' + escHtml(c.lastUser) : ''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div class="code-remaining" style="color:${color}">${rem ?? '—'}</div>
+          <div class="code-remaining-label">plans left</div>
+        </div>
+        <div class="code-actions">
+          <button class="btn-icon success" onclick="openTopUp('${escHtml(c.code)}', ${rem ?? 0})" title="Top up">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="btn-icon" onclick="openEdit('${escHtml(c.code)}', ${rem ?? 0})" title="Set plans">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="btn-icon danger" onclick="openRevoke('${escHtml(c.code)}')" title="Revoke">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderActivity(activity) {
+  const el = document.getElementById('activity-list');
+  if (!activity.length) {
+    el.innerHTML = '<div class="empty">No activity yet</div>';
+    return;
+  }
+
+  el.innerHTML = '<div class="activity-list">' + activity.map(a => {
+    const time = timeAgo(new Date(a.savedAt));
+    return `
+      <div class="activity-item">
+        <div class="activity-dot"></div>
+        <div class="activity-text">
+          Plan generated · <span class="activity-code">${escHtml(a.code)}</span>
+          ${a.userName ? ' · ' + escHtml(a.userName) : ''}
+        </div>
+        <div class="activity-time">${time}</div>
+      </div>
+    `;
+  }).join('') + '</div>';
+}
+
+// ── ACTIONS ───────────────────────────────────────────────────────────────────
+async function createCode() {
+  const code = document.getElementById('new-code').value.trim().toUpperCase();
+  const plans = parseInt(document.getElementById('new-plans').value) || 10;
+  const resultEl = document.getElementById('create-result');
+
+  if (!code) { resultEl.className = 'create-result error'; resultEl.textContent = 'Enter a code name'; return; }
+
+  const btn = document.querySelector('.btn-create');
+  btn.disabled = true; btn.textContent = 'Creating…';
+
+  try {
+    const data = await api('/api/admin/create-code', { code, plans });
+    resultEl.className = 'create-result success';
+    resultEl.innerHTML = `
+      <strong>${data.code}</strong> created with ${data.plans} plans.<br>
+      <span style="opacity:0.8">${data.action}</span>
+    `;
+    document.getElementById('new-code').value = '';
+    document.getElementById('new-plans').value = '10';
+    toast('Code created — add to Railway env vars');
+    await loadCodes();
+  } catch(err) {
+    resultEl.className = 'create-result error';
+    resultEl.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create';
+  }
+}
+
+// Edit plans
+function openEdit(code, remaining) {
+  currentEditCode = code;
+  currentEditRemaining = remaining;
+  document.getElementById('edit-modal-sub').textContent = `Set exact remaining plans for ${code}`;
+  document.getElementById('edit-amount').value = remaining;
+  openModal('edit-modal');
+  setTimeout(() => document.getElementById('edit-amount').focus(), 300);
+}
+
+async function confirmEdit() {
+  const amount = parseInt(document.getElementById('edit-amount').value);
+  if (isNaN(amount) || amount < 0) { toast('Enter a valid number'); return; }
+  try {
+    await api('/api/admin/set-remaining', { code: currentEditCode, amount });
+    closeModal('edit-modal');
+    toast(`${currentEditCode} → ${amount} plans`);
+    await loadCodes();
+    await loadStats();
+  } catch(err) { toast(err.message); }
+}
+
+// Top up
+function openTopUp(code, remaining) {
+  currentEditCode = code;
+  currentEditRemaining = remaining;
+  document.getElementById('topup-modal-sub').textContent = `${code} currently has ${remaining} plans. Add more:`;
+  document.getElementById('topup-amount').value = '10';
+  openModal('topup-modal');
+  setTimeout(() => document.getElementById('topup-amount').focus(), 300);
+}
+
+async function confirmTopUp() {
+  const add = parseInt(document.getElementById('topup-amount').value);
+  if (isNaN(add) || add < 1) { toast('Enter a valid number'); return; }
+  const newTotal = currentEditRemaining + add;
+  try {
+    await api('/api/admin/set-remaining', { code: currentEditCode, amount: newTotal });
+    closeModal('topup-modal');
+    toast(`${currentEditCode} topped up to ${newTotal} plans`);
+    await loadCodes();
+    await loadStats();
+  } catch(err) { toast(err.message); }
+}
+
+// Revoke
+function openRevoke(code) {
+  currentEditCode = code;
+  document.getElementById('revoke-modal-sub').textContent = `Revoke ${code}? Sets remaining plans to 0. Remove from ACTIVATION_CODES in Railway to fully disable.`;
+  openModal('revoke-modal');
+}
+
+async function confirmRevoke() {
+  try {
+    await api('/api/admin/revoke-code', { code: currentEditCode });
+    closeModal('revoke-modal');
+    toast(`${currentEditCode} revoked`);
+    await loadCodes();
+    await loadStats();
+  } catch(err) { toast(err.message); }
+}
+
+// ── MODAL HELPERS ─────────────────────────────────────────────────────────────
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ── REFRESH ───────────────────────────────────────────────────────────────────
+async function refreshAll() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  await loadAll();
+  btn.classList.remove('spinning');
+  toast('Refreshed');
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(date) {
+  const diff = Date.now() - date.getTime();
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  if (h < 24) return `${h}h ago`;
+  if (d < 7) return `${d}d ago`;
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+</script>
+</body>
+</html>
