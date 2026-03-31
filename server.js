@@ -185,7 +185,7 @@ app.post('/api/history/save', async (req, res) => {
 
   try {
     await saveToHistory(code, entry);
-    return res.json({ ok: true });
+    return res.json({ ok: true, id: entry.id });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
