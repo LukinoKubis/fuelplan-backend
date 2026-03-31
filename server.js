@@ -14,16 +14,22 @@ app.use(express.json({ limit: '4mb' }));
 app.use((req, res, next) => {
   const allowed = [
     (process.env.FRONTEND_URL || '').replace(/\/$/, ''),
+    'https://fuelplan.fit',
+    'https://www.fuelplan.fit',
+    'https://fuelplan.netlify.app',
     'http://localhost:3000',
     'http://localhost:5500',
     'http://127.0.0.1:5500'
   ].filter(Boolean);
 
   const origin = req.headers.origin;
+
+  // Allow if no origin (direct API calls, mobile apps) or origin is in allowlist
   if (!origin || allowed.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
   } else {
-    res.setHeader('Access-Control-Allow-Origin', allowed[0]);
+    // Still allow — don't block unknown origins, just don't echo them
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
