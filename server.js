@@ -29,6 +29,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Input sanitization ────────────────────────────────────────────────────────
+function sanitizeUserContent(messages) {
+  if (!Array.isArray(messages)) return messages;
+  return messages.map(msg => {
+    if (typeof msg.content !== 'string') return msg;
+    // Hard cap on message length — legitimate meal plan requests don't need more than 3000 chars
+    if (msg.content.length > 3000) {
+      console.warn('Message content truncated — exceeded 3000 chars');
+      msg.content = msg.content.slice(0, 3000);
+    }
+    return msg;
+  });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getValidCodes() {
   return (process.env.ACTIVATION_CODES || '')
@@ -71,7 +85,12 @@ app.post('/api/claude', async (req, res) => {
     });
   }
 
-  // 3. Forward to Anthropic FIRST — only decrement on success
+  // 3. Sanitize messages before forwarding
+  if (payload.messages) {
+    payload.messages = sanitizeUserContent(payload.messages);
+  }
+
+  // 4. Forward to Anthropic FIRST — only decrement on success
   try {
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
