@@ -150,7 +150,7 @@ app.post('/api/claude', async (req, res) => {
 
 // ── History endpoints ─────────────────────────────────────────────────────────
 app.post('/api/history/save', async (req, res) => {
-  const { activationCode, plan, userName, macros } = req.body;
+  const { activationCode, plan, userName, planName, macros } = req.body;
   if (!activationCode) return res.status(401).json({ error: 'No code' });
   const code = activationCode.trim().toUpperCase();
   if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
@@ -160,6 +160,7 @@ app.post('/api/history/save', async (req, res) => {
     id: Date.now(),
     savedAt: new Date().toISOString(),
     userName: userName || 'User',
+    planName: planName || 'My Plan',
     macros: macros || plan.summary,
     plan
   };
@@ -180,7 +181,7 @@ app.post('/api/history/get', async (req, res) => {
 
   try {
     const history = await getHistory(code);
-    return res.json({ history: history.map(e => ({ id: e.id, savedAt: e.savedAt, userName: e.userName, macros: e.macros })) });
+    return res.json({ history: history.map(e => ({ id: e.id, savedAt: e.savedAt, userName: e.userName, planName: e.planName, macros: e.macros })) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -197,7 +198,7 @@ app.post('/api/history/restore', async (req, res) => {
     const history = await getHistory(code);
     const entry = history.find(e => e.id === planId);
     if (!entry) return res.status(404).json({ error: 'Plan not found' });
-    return res.json({ plan: entry.plan, userName: entry.userName, savedAt: entry.savedAt });
+    return res.json({ plan: entry.plan, userName: entry.userName, planName: entry.planName, savedAt: entry.savedAt });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
