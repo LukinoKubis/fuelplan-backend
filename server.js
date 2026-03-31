@@ -148,9 +148,19 @@ app.post('/api/claude', async (req, res) => {
 
     return res.status(response.status).json(response.data);
   } catch (err) {
-    const status = err.response?.status || 502;
-    const message = err.response?.data?.error?.message || err.message;
-    return res.status(status).json({ error: message });
+    // Don't pass Anthropic's status codes through — they confuse the frontend
+    // 503/502 from Anthropic should not look like our server is down
+    const anthropicMsg = err.response?.data?.error?.message;
+    const isTimeout = err.code === 'ECONNABORTED' || err.message.includes('timeout');
+
+    if (isTimeout) {
+      return res.status(504).json({ error: 'Request timed out — please try again.' });
+    }
+    if (err.response?.status === 529 || err.response?.status === 503) {
+      return res.status(503).json({ error: 'Claude API is temporarily overloaded — please try again in a moment.' });
+    }
+    // Any other Anthropic error
+    return res.status(500).json({ error: anthropicMsg || 'Claude API error — please try again.' });
   }
 });
 
