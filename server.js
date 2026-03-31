@@ -4,9 +4,10 @@ const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const MAX_HISTORY = 5; // plans to keep per code
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '4mb' })); // larger limit to store plans
 
 // CORS
 app.use((req, res, next) => {
@@ -34,9 +35,8 @@ function sanitizeUserContent(messages) {
   if (!Array.isArray(messages)) return messages;
   return messages.map(msg => {
     if (typeof msg.content !== 'string') return msg;
-    // Hard cap on message length — legitimate meal plan requests don't need more than 3000 chars
     if (msg.content.length > 3000) {
-      console.warn('Message content truncated — exceeded 3000 chars');
+      console.warn('Message content truncated');
       msg.content = msg.content.slice(0, 3000);
     }
     return msg;
@@ -46,9 +46,7 @@ function sanitizeUserContent(messages) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getValidCodes() {
   return (process.env.ACTIVATION_CODES || '')
-    .split(',')
-    .map(c => c.trim().toUpperCase())
-    .filter(Boolean);
+    .split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
 }
 
 function validateCode(code) {
@@ -63,18 +61,14 @@ app.get('/', (req, res) => {
 
 // Main Claude proxy
 app.post('/api/claude', async (req, res) => {
-  const { activationCode, ...payload } = req.body;
+  const { activationCode, planMeta, ...payload } = req.body;
 
-  // 1. Validate code
   if (!activationCode) return res.status(401).json({ error: 'No activation code provided' });
   if (!validateCode(activationCode)) return res.status(403).json({ error: 'Invalid activation code' });
 
   const code = activationCode.trim().toUpperCase();
 
-  // 2. Check remaining plans (stored as remaining count, not used count)
   const remaining = await getRemaining(code);
-
-  // null means key doesn't exist yet — initialize with default limit
   if (remaining === null) {
     await setRemaining(code, process.env.DEFAULT_PLAN_LIMIT ? parseInt(process.env.DEFAULT_PLAN_LIMIT) : 10);
   } else if (remaining <= 0) {
@@ -85,12 +79,8 @@ app.post('/api/claude', async (req, res) => {
     });
   }
 
-  // 3. Sanitize messages before forwarding
-  if (payload.messages) {
-    payload.messages = sanitizeUserContent(payload.messages);
-  }
+  if (payload.messages) payload.messages = sanitizeUserContent(payload.messages);
 
-  // 4. Forward to Anthropic FIRST — only decrement on success
   try {
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
@@ -105,20 +95,88 @@ app.post('/api/claude', async (req, res) => {
       }
     );
 
-    // 4. Decrement ONLY after Anthropic succeeds
+    // Decrement only on success
     await decrementRemaining(code);
+
+    // Save to history if plan data is passed alongside
+    if (planMeta) {
+      await saveToHistory(code, planMeta);
+    }
 
     return res.status(response.status).json(response.data);
 
   } catch (err) {
-    // Don't decrement — plan wasn't generated
     const status = err.response?.status || 502;
     const message = err.response?.data?.error?.message || err.message;
     return res.status(status).json({ error: message });
   }
 });
 
-// Usage check endpoint — returns remaining count
+// Save plan to history (called from frontend after successful parse)
+app.post('/api/history/save', async (req, res) => {
+  const { activationCode, plan, userName, macros } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  if (!validateCode(activationCode)) return res.status(403).json({ error: 'Invalid code' });
+  if (!plan) return res.status(400).json({ error: 'No plan data' });
+
+  const code = activationCode.trim().toUpperCase();
+  const entry = {
+    id: Date.now(),
+    savedAt: new Date().toISOString(),
+    userName: userName || 'User',
+    macros: macros || plan.summary,
+    plan
+  };
+
+  try {
+    await saveToHistory(code, entry);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Get plan history
+app.post('/api/history/get', async (req, res) => {
+  const { activationCode } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  if (!validateCode(activationCode)) return res.status(403).json({ error: 'Invalid code' });
+
+  const code = activationCode.trim().toUpperCase();
+  try {
+    const history = await getHistory(code);
+    // Return list with metadata only (no full plan) for the list view
+    const list = history.map(entry => ({
+      id: entry.id,
+      savedAt: entry.savedAt,
+      userName: entry.userName,
+      macros: entry.macros
+    }));
+    return res.json({ history: list });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Get a specific plan from history by id
+app.post('/api/history/restore', async (req, res) => {
+  const { activationCode, planId } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  if (!validateCode(activationCode)) return res.status(403).json({ error: 'Invalid code' });
+  if (!planId) return res.status(400).json({ error: 'No planId' });
+
+  const code = activationCode.trim().toUpperCase();
+  try {
+    const history = await getHistory(code);
+    const entry = history.find(e => e.id === planId);
+    if (!entry) return res.status(404).json({ error: 'Plan not found in history' });
+    return res.json({ plan: entry.plan, userName: entry.userName, savedAt: entry.savedAt });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Usage check
 app.post('/api/usage', async (req, res) => {
   const { activationCode } = req.body;
   if (!activationCode) return res.status(400).json({ error: 'No code' });
@@ -126,17 +184,30 @@ app.post('/api/usage', async (req, res) => {
 
   const code = activationCode.trim().toUpperCase();
   let remaining = await getRemaining(code);
-
-  // If key doesn't exist yet, show default limit
   if (remaining === null) {
     const limit = process.env.DEFAULT_PLAN_LIMIT ? parseInt(process.env.DEFAULT_PLAN_LIMIT) : 10;
     remaining = limit;
   }
-
   return res.json({ remaining, limit: remaining });
 });
 
-// ── Redis helpers (stores REMAINING count, not used count) ────────────────────
+// ── History helpers ───────────────────────────────────────────────────────────
+async function getHistory(code) {
+  const raw = await redisCommand('GET', 'fuelplan:history:' + code);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+async function saveToHistory(code, entry) {
+  let history = await getHistory(code);
+  // Prepend new entry (newest first)
+  history.unshift(entry);
+  // Keep only MAX_HISTORY entries
+  if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
+  await redisCommand('SET', 'fuelplan:history:' + code, JSON.stringify(history));
+}
+
+// ── Redis helpers ─────────────────────────────────────────────────────────────
 async function redisCommand(command, ...args) {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
