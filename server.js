@@ -204,6 +204,26 @@ app.post('/api/history/restore', async (req, res) => {
   }
 });
 
+// ── Delete a plan from history ────────────────────────────────────────────────
+app.post('/api/history/delete', async (req, res) => {
+  const { activationCode, planId } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+  if (!planId) return res.status(400).json({ error: 'No planId' });
+
+  try {
+    let history = await getHistory(code);
+    const before = history.length;
+    history = history.filter(e => e.id !== planId);
+    if (history.length === before) return res.status(404).json({ error: 'Plan not found' });
+    await redisCommand('SET', 'fuelplan:history:' + code, JSON.stringify(history));
+    return res.json({ ok: true, remaining: history.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Usage check ───────────────────────────────────────────────────────────────
 app.post('/api/usage', async (req, res) => {
   const { activationCode } = req.body;
