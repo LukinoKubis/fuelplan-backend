@@ -11,14 +11,17 @@ app.use(express.json({ limit: '2mb' }));
 // CORS — allow your Netlify frontend (and localhost for testing)
 app.use((req, res, next) => {
   const allowed = [
-    process.env.FRONTEND_URL,       // e.g. https://your-app.netlify.app
+    (process.env.FRONTEND_URL || '').replace(/\/$/, ''), // strip trailing slash
     'http://localhost:3000',
-    'http://127.0.0.1:5500'         // VS Code Live Server
+    'http://localhost:5500',
+    'http://127.0.0.1:5500'
   ].filter(Boolean);
 
   const origin = req.headers.origin;
   if (!origin || allowed.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowed[0]);
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
