@@ -751,7 +751,7 @@ body {
 <div class="modal-overlay" id="revoke-modal">
   <div class="modal">
     <div class="modal-title">Revoke Code</div>
-    <div class="modal-sub" id="revoke-modal-sub">This will set remaining plans to 0. The code stays in your env — it just stops working.</div>
+    <div class="modal-sub" id="revoke-modal-sub">This fully deletes the code. It stops working immediately.</div>
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal('revoke-modal')">Cancel</button>
       <button class="btn-confirm danger" onclick="confirmRevoke()">Revoke</button>
@@ -971,13 +971,10 @@ async function createCode() {
   try {
     const data = await api('/api/admin/create-code', { code, plans });
     resultEl.className = 'create-result success';
-    resultEl.innerHTML = `
-      <strong>${data.code}</strong> created with ${data.plans} plans.<br>
-      <span style="opacity:0.8">${data.action}</span>
-    `;
+    resultEl.innerHTML = `<strong>${data.code}</strong> is live with ${data.plans} plans. Share it now.`;
     document.getElementById('new-code').value = '';
     document.getElementById('new-plans').value = '10';
-    toast('Code created — add to Railway env vars');
+    toast('Code created and active immediately');
     await loadCodes();
   } catch(err) {
     resultEl.className = 'create-result error';
@@ -1036,7 +1033,7 @@ async function confirmTopUp() {
 // Revoke
 function openRevoke(code) {
   currentEditCode = code;
-  document.getElementById('revoke-modal-sub').textContent = `Revoke ${code}? Sets remaining plans to 0. Remove from ACTIVATION_CODES in Railway to fully disable.`;
+  document.getElementById('revoke-modal-sub').textContent = `Fully delete ${code}? It will stop working immediately.`;
   openModal('revoke-modal');
 }
 
