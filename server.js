@@ -112,13 +112,18 @@ app.post('/api/claude', async (req, res) => {
   if (!activationCode) return res.status(401).json({ error: 'No activation code provided' });
 
   const code = activationCode.trim().toUpperCase();
-  const valid = await validateCode(code);
+
+  // Run validation + remaining check IN PARALLEL — saves ~150-300ms of serial Redis round trips
+  const [valid, remaining] = await Promise.all([
+    validateCode(code),
+    getRemaining(code)
+  ]);
+
   if (!valid) return res.status(403).json({ error: 'Invalid activation code' });
 
-  const remaining = await getRemaining(code);
   if (remaining === null) {
-    const def = parseInt(process.env.DEFAULT_PLAN_LIMIT) || 10;
-    await setRemaining(code, def);
+    // First use — set default, fire and forget (don't block the request)
+    setRemaining(code, parseInt(process.env.DEFAULT_PLAN_LIMIT) || 10).catch(() => {});
   } else if (remaining <= 0) {
     return res.status(402).json({
       error: 'Plan limit reached',
@@ -143,23 +148,20 @@ app.post('/api/claude', async (req, res) => {
       }
     );
 
-    await decrementRemaining(code);
-    if (planMeta) await saveToHistory(code, planMeta);
+    // Fire Redis writes in parallel after Anthropic responds — client doesn't wait for these
+    const writes = [decrementRemaining(code)];
+    if (planMeta) writes.push(saveToHistory(code, planMeta));
+    Promise.all(writes).catch(err => console.error('Post-write error:', err.message));
 
     return res.status(response.status).json(response.data);
+
   } catch (err) {
-    // Don't pass Anthropic's status codes through — they confuse the frontend
-    // 503/502 from Anthropic should not look like our server is down
     const anthropicMsg = err.response?.data?.error?.message;
     const isTimeout = err.code === 'ECONNABORTED' || err.message.includes('timeout');
-
-    if (isTimeout) {
-      return res.status(504).json({ error: 'Request timed out — please try again.' });
-    }
+    if (isTimeout) return res.status(504).json({ error: 'Request timed out — please try again.' });
     if (err.response?.status === 529 || err.response?.status === 503) {
       return res.status(503).json({ error: 'Claude API is temporarily overloaded — please try again in a moment.' });
     }
-    // Any other Anthropic error
     return res.status(500).json({ error: anthropicMsg || 'Claude API error — please try again.' });
   }
 });
