@@ -52,8 +52,23 @@ app.post('/api/webhook/lemonsqueezy', express.raw({ type: 'application/json' }),
     return res.json({ received: true });
   }
 
+  const orderAttr = payload.data?.attributes || {};
+  const orderRecord = {
+    id: payload.data?.id || '',
+    code,
+    credits,
+    variantId,
+    total: orderAttr.total || 0,
+    subtotal: orderAttr.subtotal || 0,
+    tax: orderAttr.tax || 0,
+    currency: (orderAttr.currency || 'EUR').toUpperCase(),
+    createdAt: orderAttr.created_at || new Date().toISOString(),
+    type: null,
+  };
+
   try {
     const exists = await codeExists(code);
+    orderRecord.type = exists ? 'topup' : 'new';
     if (exists) {
       await redisCommand('INCRBY', 'fuelplan:remaining:' + code, credits);
       console.log(`LS: topped up ${code} by ${credits} credits`);
@@ -62,6 +77,7 @@ app.post('/api/webhook/lemonsqueezy', express.raw({ type: 'application/json' }),
       await redisCommand('SET', 'fuelplan:remaining:' + code, credits);
       console.log(`LS: created new code ${code} with ${credits} credits`);
     }
+    await saveOrderRecord(orderRecord);
   } catch (err) {
     console.error('Redis error in LS webhook:', err);
     return res.status(500).json({ error: 'Redis error' });
@@ -450,6 +466,27 @@ app.post('/api/admin/set-note', requireAdmin, async (req, res) => {
   return res.json({ ok: true, code: c });
 });
 
+// ── Admin: orders ─────────────────────────────────────────────────────────────
+app.post('/api/admin/orders', requireAdmin, async (req, res) => {
+  const orders = await getAllOrders();
+  const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0);
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const monthRevenue = orders
+    .filter(o => new Date(o.createdAt).getTime() >= startOfMonth)
+    .reduce((s, o) => s + (o.total || 0), 0);
+  return res.json({
+    orders,
+    stats: {
+      totalOrders: orders.length,
+      totalRevenue,
+      monthRevenue,
+      newCodes: orders.filter(o => o.type === 'new').length,
+      topUps: orders.filter(o => o.type === 'topup').length,
+    }
+  });
+});
+
 // ── Admin: health check ───────────────────────────────────────────────────────
 app.get('/api/admin/health', requireAdmin, async (req, res) => {
   const t0 = Date.now();
@@ -575,6 +612,20 @@ async function getHistory(code) {
   const raw = await redisCommand('GET', 'fuelplan:history:' + code);
   if (!raw) return [];
   try { return JSON.parse(raw); } catch { return []; }
+}
+
+async function saveOrderRecord(order) {
+  const raw = await redisCommand('GET', 'fuelplan:orders');
+  let orders = [];
+  try { orders = raw ? JSON.parse(raw) : []; } catch { orders = []; }
+  orders.unshift(order);
+  if (orders.length > 1000) orders = orders.slice(0, 1000);
+  await redisCommand('SET', 'fuelplan:orders', JSON.stringify(orders));
+}
+
+async function getAllOrders() {
+  const raw = await redisCommand('GET', 'fuelplan:orders');
+  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
 
 async function saveToHistory(code, entry) {

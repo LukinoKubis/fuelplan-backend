@@ -158,6 +158,19 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
 .filter-select:focus { border-color:var(--lime); }
 .activity-count { font-size:12px; color:var(--muted); }
 
+/* ORDERS */
+.order-list { display:flex; flex-direction:column; gap:8px; }
+.order-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; display:flex; align-items:center; gap:12px; }
+.order-type-badge { font-size:9px; font-weight:800; letter-spacing:0.12em; text-transform:uppercase; padding:3px 8px; border-radius:20px; flex-shrink:0; }
+.order-type-badge.new { background:var(--lime-dim); color:var(--lime); }
+.order-type-badge.topup { background:var(--blue-dim); color:var(--blue); }
+.order-info { flex:1; min-width:0; }
+.order-code { font-family:'Syne',sans-serif; font-weight:800; font-size:13px; letter-spacing:0.06em; }
+.order-meta { font-size:11px; color:var(--muted); margin-top:2px; }
+.order-amount { text-align:right; flex-shrink:0; }
+.order-amount-val { font-family:'Syne',sans-serif; font-weight:800; font-size:18px; color:var(--lime); }
+.order-amount-sub { font-size:10px; color:var(--muted); }
+
 /* HEALTH */
 .health-grid { display:flex; flex-direction:column; gap:10px; }
 .health-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px 20px; display:flex; align-items:center; gap:14px; }
@@ -241,6 +254,7 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
       <div class="app-header-row2-inner" id="tab-nav">
         <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
         <button class="tab-btn" data-tab="codes" onclick="switchTab('codes')">Codes</button>
+        <button class="tab-btn" data-tab="orders" onclick="switchTab('orders')">Orders</button>
         <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">Activity</button>
         <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
       </div>
@@ -360,6 +374,45 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
       </div>
     </div>
 
+    <!-- ══ TAB: ORDERS ══ -->
+    <div class="tab-section" id="tab-orders">
+      <div class="stats-grid" style="margin-bottom:20px">
+        <div class="stat-card">
+          <div class="stat-val" id="ord-total-rev" style="color:var(--lime)">—</div>
+          <div class="stat-label">Total Revenue</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="ord-month-rev" style="color:var(--blue)">—</div>
+          <div class="stat-label">This Month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="ord-total-count" style="color:var(--green)">—</div>
+          <div class="stat-label">Total Orders</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="ord-new-count" style="color:var(--orange)">—</div>
+          <div class="stat-label">New Codes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="ord-topup-count" style="color:var(--muted)">—</div>
+          <div class="stat-label">Top-ups</div>
+        </div>
+      </div>
+
+      <div class="section-hdr" style="margin-bottom:12px">
+        <span class="section-title">All Orders</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select class="filter-select" id="orders-filter-type" onchange="renderOrdersTab()">
+            <option value="">All types</option>
+            <option value="new">New codes</option>
+            <option value="topup">Top-ups</option>
+          </select>
+          <span class="activity-count" id="orders-count"></span>
+        </div>
+      </div>
+      <div id="orders-list"><div class="empty">Loading…</div></div>
+    </div>
+
     <!-- ══ TAB: ACTIVITY ══ -->
     <div class="tab-section" id="tab-activity">
       <div class="filter-row">
@@ -462,6 +515,7 @@ let currentEditCode = '';
 let currentEditRemaining = 0;
 let allCodes = [];
 let allActivity = [];
+let allOrders = [];
 let lastBulkCodes = [];
 let _healthInterval = null;
 let _autoRefreshInterval = null;
@@ -539,6 +593,7 @@ function switchTab(tab) {
   if (el) el.classList.add('active');
   if (tab === 'health') runHealthChecks();
   if (tab === 'activity') renderActivityTab();
+  if (tab === 'orders') renderOrdersTab();
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -558,7 +613,7 @@ async function api(endpoint, body = {}, method = 'POST') {
 
 // ── LOAD ──────────────────────────────────────────────────────────────────────
 async function loadAll() {
-  await Promise.all([loadStats(), loadCodes()]);
+  await Promise.all([loadStats(), loadCodes(), loadOrders()]);
 }
 
 async function loadStats() {
@@ -708,6 +763,65 @@ function renderActivityTab() {
         ${macroStr ? '<div class="activity-macros">' + escHtml(macroStr) + '</div>' : ''}
       </div>
       <div class="activity-time">${time}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+// ── ORDERS ────────────────────────────────────────────────────────────────────
+async function loadOrders() {
+  try {
+    const data = await api('/api/admin/orders');
+    allOrders = data.orders || [];
+    const s = data.stats || {};
+    const fmt = (cents, cur) => {
+      const sym = cur === 'USD' ? '$' : '€';
+      return sym + (cents / 100).toFixed(2);
+    };
+    const cur = allOrders[0]?.currency || 'EUR';
+    document.getElementById('ord-total-rev').textContent = fmt(s.totalRevenue || 0, cur);
+    document.getElementById('ord-month-rev').textContent = fmt(s.monthRevenue || 0, cur);
+    document.getElementById('ord-total-count').textContent = s.totalOrders || 0;
+    document.getElementById('ord-new-count').textContent = s.newCodes || 0;
+    document.getElementById('ord-topup-count').textContent = s.topUps || 0;
+    renderOrdersTab();
+  } catch(err) {
+    document.getElementById('orders-list').innerHTML = '<div class="empty">Failed to load orders</div>';
+  }
+}
+
+function renderOrdersTab() {
+  const el = document.getElementById('orders-list');
+  const typeFilter = document.getElementById('orders-filter-type')?.value || '';
+  const countEl = document.getElementById('orders-count');
+
+  let items = allOrders;
+  if (typeFilter) items = items.filter(o => o.type === typeFilter);
+  if (countEl) countEl.textContent = items.length + ' orders';
+
+  if (!items.length) {
+    el.innerHTML = '<div class="empty">No orders yet — purchases will appear here once webhooks are received</div>';
+    return;
+  }
+
+  const fmt = (cents, cur) => {
+    const sym = (cur || 'EUR') === 'USD' ? '$' : '€';
+    return sym + (cents / 100).toFixed(2);
+  };
+
+  el.innerHTML = '<div class="order-list">' + items.map(o => {
+    const date = new Date(o.createdAt).toLocaleString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const typeLabel = o.type === 'topup' ? 'Top-up' : 'New Code';
+    const taxStr = o.tax ? ` · tax ${fmt(o.tax, o.currency)}` : '';
+    return `<div class="order-card">
+      <div class="order-type-badge ${o.type || 'new'}">${escHtml(typeLabel)}</div>
+      <div class="order-info">
+        <div class="order-code">${escHtml(o.code)}</div>
+        <div class="order-meta">${escHtml(date)}${taxStr} · ${o.credits || 0} credits · ID: ${escHtml(String(o.id).slice(0,12))}…</div>
+      </div>
+      <div class="order-amount">
+        <div class="order-amount-val">${fmt(o.total || 0, o.currency)}</div>
+        <div class="order-amount-sub">${escHtml(o.currency || 'EUR')}</div>
+      </div>
     </div>`;
   }).join('') + '</div>';
 }
