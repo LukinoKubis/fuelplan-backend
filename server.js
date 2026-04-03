@@ -320,6 +320,76 @@ app.post('/api/history/delete', async (req, res) => {
   }
 });
 
+// ── User tracking data (calendar, weights, notes, water goal) ────────────────
+app.post('/api/tracking/save', async (req, res) => {
+  const { activationCode, data } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'No data' });
+
+  try {
+    const existing = await getTrackingData(code);
+    const merged = mergeTrackingData(existing, data);
+    await redisCommand('SET', 'fuelplan:tracking:' + code, JSON.stringify(merged));
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tracking/get', async (req, res) => {
+  const { activationCode } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+
+  try {
+    const data = await getTrackingData(code);
+    return res.json({ data });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+async function getTrackingData(code) {
+  const raw = await redisCommand('GET', 'fuelplan:tracking:' + code);
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
+function mergeTrackingData(existing, incoming) {
+  const merged = { ...existing };
+
+  // calendarLog: union all date keys — incoming overwrites existing for same date
+  if (incoming.calendarLog && typeof incoming.calendarLog === 'object') {
+    merged.calendarLog = { ...(existing.calendarLog || {}), ...incoming.calendarLog };
+  }
+
+  // weights: merge by date — local (incoming) wins on conflict
+  if (Array.isArray(incoming.weights)) {
+    const existingByDate = {};
+    (existing.weights || []).forEach(w => { existingByDate[w.date] = w; });
+    incoming.weights.forEach(w => { existingByDate[w.date] = w; }); // incoming overwrites
+    merged.weights = Object.values(existingByDate)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 365);
+  }
+
+  // dayNotes: union — incoming overwrites existing for same key
+  if (incoming.dayNotes && typeof incoming.dayNotes === 'object') {
+    merged.dayNotes = { ...(existing.dayNotes || {}), ...incoming.dayNotes };
+  }
+
+  // waterGoal: incoming wins
+  if (typeof incoming.waterGoal === 'number') {
+    merged.waterGoal = incoming.waterGoal;
+  }
+
+  merged.updatedAt = new Date().toISOString();
+  return merged;
+}
+
 // ── Usage check ───────────────────────────────────────────────────────────────
 app.post('/api/usage', async (req, res) => {
   const { activationCode } = req.body;
