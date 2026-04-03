@@ -3,10 +3,24 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const crypto = require('crypto');
+const webPush = require('web-push');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_HISTORY = 5;
+
+// ── Web Push / VAPID setup ────────────────────────────────────────────────────
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || 'BJ8LlwEHVKVb0pKlZLXVw1-rlu8rQvQ4sYccKjTlGssQRjq_xBA9lOoziy3XOk9tnugGVl0zjjpols2Xu8nnloQ';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:support@fuelplan.fit';
+
+if (VAPID_PRIVATE_KEY) {
+  try {
+    webPush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  } catch (e) {
+    console.error('VAPID setup failed:', e.message);
+  }
+}
 
 // ── Lemon Squeezy credit map (variant ID → credits) ──────────────────────────
 const LS_PLANS = {
@@ -388,6 +402,96 @@ function mergeTrackingData(existing, incoming) {
 
   merged.updatedAt = new Date().toISOString();
   return merged;
+}
+
+// ── Web Push endpoints ────────────────────────────────────────────────────────
+// Returns public VAPID key so frontend can subscribe
+app.get('/api/push/vapid-key', (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+// Save a push subscription for a user code
+app.post('/api/push/subscribe', async (req, res) => {
+  const { activationCode, subscription } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+  if (!subscription || !subscription.endpoint) return res.status(400).json({ error: 'No subscription' });
+
+  try {
+    // Store subscription (up to 3 devices per code)
+    const existing = await getPushSubscriptions(code);
+    const filtered = existing.filter(s => s.endpoint !== subscription.endpoint);
+    filtered.unshift(subscription);
+    await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(filtered.slice(0, 3)));
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Remove push subscription
+app.post('/api/push/unsubscribe', async (req, res) => {
+  const { activationCode, endpoint } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+
+  try {
+    const existing = await getPushSubscriptions(code);
+    const filtered = existing.filter(s => s.endpoint !== endpoint);
+    await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(filtered));
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Send a test push notification
+app.post('/api/push/test', async (req, res) => {
+  const { activationCode } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+  if (!VAPID_PRIVATE_KEY) return res.status(503).json({ error: 'Push not configured' });
+
+  const subs = await getPushSubscriptions(code);
+  if (!subs.length) return res.status(404).json({ error: 'No subscriptions found' });
+
+  const payload = JSON.stringify({
+    title: 'Fuelplan 🌿',
+    body: 'Push notifications are working! Check your plan.',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: 'fuelplan-test'
+  });
+
+  let sent = 0;
+  const staleEndpoints = [];
+  await Promise.all(subs.map(async sub => {
+    try {
+      await webPush.sendNotification(sub, payload);
+      sent++;
+    } catch (err) {
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        staleEndpoints.push(sub.endpoint);
+      }
+    }
+  }));
+
+  // Clean up stale subscriptions
+  if (staleEndpoints.length) {
+    const fresh = subs.filter(s => !staleEndpoints.includes(s.endpoint));
+    await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(fresh));
+  }
+
+  return res.json({ ok: true, sent, total: subs.length });
+});
+
+async function getPushSubscriptions(code) {
+  const raw = await redisCommand('GET', 'fuelplan:push:' + code);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
 }
 
 // ── Usage check ───────────────────────────────────────────────────────────────
