@@ -2,58 +2,69 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || '');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_HISTORY = 5;
 
-// ── Stripe credit map ─────────────────────────────────────────────────────────
-const STRIPE_PLANS = {
-  [process.env.STRIPE_PRICE_5]:  5,
-  [process.env.STRIPE_PRICE_10]: 10,
-  [process.env.STRIPE_PRICE_20]: 20,
+// ── Lemon Squeezy credit map (variant ID → credits) ──────────────────────────
+const LS_PLANS = {
+  [process.env.LS_VARIANT_5]:  5,
+  [process.env.LS_VARIANT_10]: 10,
+  [process.env.LS_VARIANT_20]: 20,
 };
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-// Stripe webhook needs raw body — must come BEFORE express.json()
-app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    console.error('Stripe webhook signature error:', err.message);
-    return res.status(400).send('Webhook signature failed');
+// LS webhook needs raw body for signature check — must come BEFORE express.json()
+app.post('/api/webhook/lemonsqueezy', express.raw({ type: 'application/json' }), async (req, res) => {
+  const secret = process.env.LS_WEBHOOK_SECRET;
+  const signature = req.headers['x-signature'];
+
+  if (!secret || !signature) {
+    console.error('LS webhook: missing secret or signature');
+    return res.status(400).send('Missing signature');
   }
 
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const code = (session.metadata?.activationCode || '').toUpperCase();
-    const priceId = session.metadata?.priceId;
-    const credits = STRIPE_PLANS[priceId];
+  const hmac = crypto.createHmac('sha256', secret).update(req.body).digest('hex');
+  if (hmac !== signature) {
+    console.error('LS webhook: signature mismatch');
+    return res.status(400).send('Signature mismatch');
+  }
 
-    if (!code || !credits) {
-      console.error('Stripe webhook: missing code or unrecognised priceId', { code, priceId });
-      return res.json({ received: true });
-    }
+  let payload;
+  try { payload = JSON.parse(req.body.toString()); } catch {
+    return res.status(400).send('Invalid JSON');
+  }
 
-    try {
-      const exists = await codeExists(code);
-      if (exists) {
-        // Top up existing code
-        await redisCommand('INCRBY', 'fuelplan:remaining:' + code, credits);
-        console.log(`Topped up ${code} by ${credits} credits`);
-      } else {
-        // New code purchase — create the code with the right number of credits
-        await addCode(code);
-        await redisCommand('SET', 'fuelplan:remaining:' + code, credits);
-        console.log(`Created new code ${code} with ${credits} credits`);
-      }
-    } catch (err) {
-      console.error('Redis error in webhook:', err);
-      return res.status(500).json({ error: 'Redis error' });
+  const eventName = payload.meta?.event_name;
+  if (eventName !== 'order_created') return res.json({ received: true });
+
+  const order = payload.data?.attributes;
+  if (!order || order.status !== 'paid') return res.json({ received: true });
+
+  const code = (payload.meta?.custom_data?.activation_code || '').toUpperCase();
+  const variantId = String(payload.data?.relationships?.variants?.data?.[0]?.id || '');
+  const credits = LS_PLANS[variantId];
+
+  if (!code || !credits) {
+    console.error('LS webhook: missing code or unrecognised variant', { code, variantId });
+    return res.json({ received: true });
+  }
+
+  try {
+    const exists = await codeExists(code);
+    if (exists) {
+      await redisCommand('INCRBY', 'fuelplan:remaining:' + code, credits);
+      console.log(`LS: topped up ${code} by ${credits} credits`);
+    } else {
+      await addCode(code);
+      await redisCommand('SET', 'fuelplan:remaining:' + code, credits);
+      console.log(`LS: created new code ${code} with ${credits} credits`);
     }
+  } catch (err) {
+    console.error('Redis error in LS webhook:', err);
+    return res.status(500).json({ error: 'Redis error' });
   }
 
   res.json({ received: true });
@@ -501,33 +512,57 @@ async function setRemaining(code, count) {
   await redisCommand('SET', 'fuelplan:remaining:' + code, count);
 }
 
-// ── Stripe Checkout ───────────────────────────────────────────────────────────
+// ── Lemon Squeezy Checkout ────────────────────────────────────────────────────
+const LS_VARIANT_MAP = { '5': process.env.LS_VARIANT_5, '10': process.env.LS_VARIANT_10, '20': process.env.LS_VARIANT_20 };
+
 app.post('/api/create-checkout', async (req, res) => {
-  const { activationCode, priceId } = req.body;
+  const { activationCode, plan } = req.body;
   const code = (activationCode || '').trim().toUpperCase();
+  const variantId = LS_VARIANT_MAP[plan];
 
-  if (!code || !priceId) return res.status(400).json({ error: 'Missing code or priceId' });
-  if (!STRIPE_PLANS[priceId]) return res.status(400).json({ error: 'Invalid plan' });
-  if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Payments not configured' });
+  if (!code || !plan) return res.status(400).json({ error: 'Missing code or plan' });
+  if (!variantId) return res.status(400).json({ error: 'Invalid plan' });
+  if (!process.env.LS_API_KEY) return res.status(503).json({ error: 'Payments not configured' });
 
-  // Code must exist — users can only top up, not create codes via payment
   const exists = await codeExists(code);
   if (!exists) return res.status(403).json({ error: 'Code not found' });
 
   const FRONTEND = 'https://fuelplan.fit';
 
   try {
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      line_items: [{ price: priceId, quantity: 1 }],
-      metadata: { activationCode: code, priceId },
-      success_url: `${FRONTEND}/?payment=success&code=${encodeURIComponent(code)}`,
-      cancel_url: `${FRONTEND}/?payment=cancelled`,
-      allow_promotion_codes: true,
+    const response = await axios.post('https://api.lemonsqueezy.com/v1/checkouts', {
+      data: {
+        type: 'checkouts',
+        attributes: {
+          checkout_data: {
+            custom: { activation_code: code }
+          },
+          product_options: {
+            redirect_url: `${FRONTEND}/?payment=success`,
+            enabled_variants: [parseInt(variantId)],
+          },
+          checkout_options: {
+            button_color: '#c8f542',
+          },
+        },
+        relationships: {
+          store:   { data: { type: 'stores',   id: process.env.LS_STORE_ID } },
+          variant: { data: { type: 'variants', id: variantId } },
+        },
+      },
+    }, {
+      headers: {
+        Authorization: `Bearer ${process.env.LS_API_KEY}`,
+        Accept: 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json',
+      },
     });
-    res.json({ url: session.url });
+
+    const url = response.data?.data?.attributes?.url;
+    if (!url) throw new Error('No checkout URL returned');
+    res.json({ url });
   } catch (err) {
-    console.error('Stripe checkout error:', err.message);
+    console.error('LS checkout error:', err.response?.data || err.message);
     res.status(500).json({ error: 'Failed to create checkout session' });
   }
 });
