@@ -2,12 +2,63 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || '');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_HISTORY = 5;
 
+// ── Stripe credit map ─────────────────────────────────────────────────────────
+const STRIPE_PLANS = {
+  [process.env.STRIPE_PRICE_5]:  5,
+  [process.env.STRIPE_PRICE_10]: 10,
+  [process.env.STRIPE_PRICE_20]: 20,
+};
+
 // ── Middleware ────────────────────────────────────────────────────────────────
+// Stripe webhook needs raw body — must come BEFORE express.json()
+app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Stripe webhook signature error:', err.message);
+    return res.status(400).send('Webhook signature failed');
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const code = (session.metadata?.activationCode || '').toUpperCase();
+    const priceId = session.metadata?.priceId;
+    const credits = STRIPE_PLANS[priceId];
+
+    if (!code || !credits) {
+      console.error('Stripe webhook: missing code or unrecognised priceId', { code, priceId });
+      return res.json({ received: true });
+    }
+
+    try {
+      const exists = await codeExists(code);
+      if (exists) {
+        // Top up existing code
+        await redisCommand('INCRBY', 'fuelplan:remaining:' + code, credits);
+        console.log(`Topped up ${code} by ${credits} credits`);
+      } else {
+        // New code purchase — create the code with the right number of credits
+        await addCode(code);
+        await redisCommand('SET', 'fuelplan:remaining:' + code, credits);
+        console.log(`Created new code ${code} with ${credits} credits`);
+      }
+    } catch (err) {
+      console.error('Redis error in webhook:', err);
+      return res.status(500).json({ error: 'Redis error' });
+    }
+  }
+
+  res.json({ received: true });
+});
+
 app.use(express.json({ limit: '4mb' }));
 
 // CORS
@@ -449,6 +500,37 @@ async function getRemaining(code) {
 async function setRemaining(code, count) {
   await redisCommand('SET', 'fuelplan:remaining:' + code, count);
 }
+
+// ── Stripe Checkout ───────────────────────────────────────────────────────────
+app.post('/api/create-checkout', async (req, res) => {
+  const { activationCode, priceId } = req.body;
+  const code = (activationCode || '').trim().toUpperCase();
+
+  if (!code || !priceId) return res.status(400).json({ error: 'Missing code or priceId' });
+  if (!STRIPE_PLANS[priceId]) return res.status(400).json({ error: 'Invalid plan' });
+  if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Payments not configured' });
+
+  // Code must exist — users can only top up, not create codes via payment
+  const exists = await codeExists(code);
+  if (!exists) return res.status(403).json({ error: 'Code not found' });
+
+  const FRONTEND = 'https://fuelplan.fit';
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [{ price: priceId, quantity: 1 }],
+      metadata: { activationCode: code, priceId },
+      success_url: `${FRONTEND}/?payment=success&code=${encodeURIComponent(code)}`,
+      cancel_url: `${FRONTEND}/?payment=cancelled`,
+      allow_promotion_codes: true,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Stripe checkout error:', err.message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
 
 async function decrementRemaining(code) {
   await redisCommand('DECR', 'fuelplan:remaining:' + code);
