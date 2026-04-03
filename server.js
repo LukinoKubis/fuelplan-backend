@@ -263,13 +263,18 @@ app.post('/api/admin/codes', requireAdmin, async (req, res) => {
   const results = await Promise.all(codes.map(async (code) => {
     const remaining = await getRemaining(code);
     const history = await getHistory(code);
+    const note = await redisCommand('GET', 'fuelplan:note:' + code) || '';
     const last = history[0] || null;
     return {
       code,
       remaining: remaining ?? 0,
       plansUsed: history.length,
+      plansSaved: history.length,
       lastUsed: last ? last.savedAt : null,
       lastUser: last ? last.userName : null,
+      lastPlanName: last ? last.planName : null,
+      note,
+      plans: history.map(h => ({ id: h.id, planName: h.planName, savedAt: h.savedAt, userName: h.userName, macros: h.macros }))
     };
   }));
   return res.json({ codes: results });
@@ -289,7 +294,7 @@ app.post('/api/admin/stats', requireAdmin, async (req, res) => {
     totalPlansGenerated += history.length;
     if (history.length > 0) activeCodes++;
     if (remaining !== null && remaining <= 2 && remaining > 0) codesNearLimit++;
-    history.forEach(h => activity.push({ code, savedAt: h.savedAt, userName: h.userName }));
+    history.forEach(h => activity.push({ code, savedAt: h.savedAt, userName: h.userName, planName: h.planName, macros: h.macros }));
   }));
 
   activity.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
@@ -341,6 +346,45 @@ app.post('/api/admin/history', requireAdmin, async (req, res) => {
   if (!code) return res.status(400).json({ error: 'code required' });
   const history = await getHistory(code.trim().toUpperCase());
   return res.json({ history });
+});
+
+// ── Admin: set note for a code ────────────────────────────────────────────────
+app.post('/api/admin/set-note', requireAdmin, async (req, res) => {
+  const { code, note } = req.body;
+  if (!code) return res.status(400).json({ error: 'code required' });
+  const c = code.trim().toUpperCase();
+  await redisCommand('SET', 'fuelplan:note:' + c, note || '');
+  return res.json({ ok: true, code: c });
+});
+
+// ── Admin: health check ───────────────────────────────────────────────────────
+app.get('/api/admin/health', requireAdmin, async (req, res) => {
+  const t0 = Date.now();
+  const result = await redisCommand('PING');
+  const responseMs = Date.now() - t0;
+  const redisOk = result === 'PONG';
+  return res.json({ redis: redisOk ? 'ok' : 'error', responseMs });
+});
+
+// ── Admin: bulk create codes ──────────────────────────────────────────────────
+app.post('/api/admin/bulk-create', requireAdmin, async (req, res) => {
+  const { prefix, count, plans } = req.body;
+  if (!prefix || !count) return res.status(400).json({ error: 'prefix and count required' });
+  const n = Math.min(parseInt(count) || 1, 50);
+  const planCount = parseInt(plans) || parseInt(process.env.DEFAULT_PLAN_LIMIT) || 10;
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const created = [];
+
+  for (let i = 0; i < n; i++) {
+    let suffix = '';
+    for (let j = 0; j < 6; j++) suffix += chars[Math.floor(Math.random() * chars.length)];
+    const code = (prefix.trim().toUpperCase() + '-' + suffix).slice(0, 20);
+    await addCode(code);
+    await setRemaining(code, planCount);
+    created.push(code);
+  }
+
+  return res.json({ ok: true, created, plans: planCount });
 });
 
 // ── Redis helpers ─────────────────────────────────────────────────────────────
