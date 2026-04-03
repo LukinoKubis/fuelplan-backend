@@ -4,609 +4,187 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0e0f11">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="FP Admin">
 <title>FUELPLAN Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 :root {
-  --lime: #c8f542;
-  --lime-dim: rgba(200,245,66,0.12);
-  --bg: #0e0f11;
-  --bg2: #13151a;
-  --card: #1e2128;
-  --card2: #252830;
-  --border: #2a2d35;
-  --border2: #363a46;
-  --text: #f0f2f5;
-  --muted: #7a8099;
-  --red: #ff5757;
-  --red-dim: rgba(255,87,87,0.12);
-  --orange: #ff9a42;
-  --orange-dim: rgba(255,154,66,0.12);
-  --blue: #57a9ff;
-  --blue-dim: rgba(87,169,255,0.12);
-  --green: #4cd97b;
-  --green-dim: rgba(76,217,123,0.12);
+  --lime: #c8f542; --lime-dim: rgba(200,245,66,0.12);
+  --bg: #0e0f11; --bg2: #13151a; --card: #1e2128; --card2: #252830;
+  --border: #2a2d35; --border2: #363a46; --text: #f0f2f5; --muted: #7a8099;
+  --red: #ff5757; --red-dim: rgba(255,87,87,0.12);
+  --orange: #ff9a42; --orange-dim: rgba(255,154,66,0.12);
+  --blue: #57a9ff; --blue-dim: rgba(87,169,255,0.12);
+  --green: #4cd97b; --green-dim: rgba(76,217,123,0.12);
 }
-
 html { background: var(--bg); }
-
-body {
-  font-family: 'Figtree', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  padding-bottom: 40px;
-}
-
-/* ── LOGIN ── */
-#login-screen {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-}
-
-.login-logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.login-logo svg rect { fill: var(--lime); }
-.login-logo svg path { fill: #0e0f11; }
-
-.login-logo-text {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 20px;
-  letter-spacing: 0.15em;
-  color: var(--lime);
-}
-
-.login-tag {
-  font-size: 11px;
-  color: var(--muted);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  margin-bottom: 40px;
-}
-
-.login-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 28px 24px;
-  width: 100%;
-  max-width: 360px;
-}
-
-.login-label {
-  font-size: 11px;
-  color: var(--muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 10px;
-}
-
-.login-input {
-  width: 100%;
-  background: var(--bg2);
-  border: 1.5px solid var(--border);
-  border-radius: 12px;
-  color: var(--text);
-  font-family: 'Figtree', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  padding: 14px 16px;
-  outline: none;
-  letter-spacing: 0.08em;
-  text-align: center;
-  margin-bottom: 16px;
-  transition: border-color 0.2s;
-}
-.login-input:focus { border-color: var(--lime); }
-
-.login-input-wrap { position: relative; }
-.login-eye {
-  position: absolute;
-  right: 14px; top: 50%; transform: translateY(-50%);
-  background: none; border: none; cursor: pointer;
-  color: var(--muted); padding: 4px;
-}
-
-.btn-login {
-  width: 100%;
-  background: var(--lime);
-  color: #0e0f11;
-  border: none;
-  border-radius: 12px;
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 0.08em;
-  padding: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-login:hover { background: #d8ff5a; }
-.btn-login:active { transform: scale(0.98); }
-
-.login-error {
-  color: var(--red);
-  font-size: 12px;
-  text-align: center;
-  margin-top: 12px;
-  min-height: 18px;
-}
-
-/* ── MAIN APP ── */
-#app { display: none; }
-
-/* ── HEADER ── */
-.header {
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
-  padding: calc(env(safe-area-inset-top) + 14px) 20px 14px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.header-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-.header-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.header-logo-text {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 0.15em;
-  color: var(--lime);
-}
-
-.header-badge {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--muted);
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 3px 9px;
-}
-
-.btn-refresh {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--muted);
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 13px;
-  font-family: 'Figtree', sans-serif;
-  font-weight: 500;
-  display: flex; align-items: center; gap: 6px;
-  transition: all 0.15s;
-}
-.btn-refresh:hover { border-color: var(--border2); color: var(--text); }
-.btn-refresh svg { transition: transform 0.4s; }
-.btn-refresh.spinning svg { animation: spin 0.6s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── CONTENT ── */
-.content {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 20px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* ── STAT CARDS ── */
-.stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.stat-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
-}
-
-.stat-val {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 36px;
-  line-height: 1;
-  margin-bottom: 4px;
-}
-
-.stat-label {
-  font-size: 11px;
-  color: var(--muted);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* ── SECTION HEADER ── */
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.section-title {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 13px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-/* ── CODES TABLE ── */
-.codes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.code-row {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  transition: border-color 0.15s;
-}
-
-.code-row:hover { border-color: var(--border2); }
-
-.code-status-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.code-name {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 0.06em;
-  flex: 1;
-}
-
-.code-meta {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 2px;
-}
-
-.code-remaining {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 20px;
-  text-align: right;
-}
-
-.code-remaining-label {
-  font-size: 9px;
-  color: var(--muted);
-  text-align: right;
-  letter-spacing: 0.08em;
-}
-
-.code-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.btn-icon {
-  width: 32px; height: 32px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--muted);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 0.15s;
-}
-.btn-icon:hover { border-color: var(--border2); color: var(--text); }
-.btn-icon.danger:hover { border-color: rgba(255,87,87,0.5); color: var(--red); background: var(--red-dim); }
-.btn-icon.success:hover { border-color: rgba(76,217,123,0.5); color: var(--green); background: var(--green-dim); }
-
-/* ── ACTIVITY FEED ── */
-.activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  overflow: hidden;
-}
-
-.activity-item {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.activity-item:last-child { border-bottom: none; }
-
-.activity-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--lime);
-  flex-shrink: 0;
-}
-
-.activity-text {
-  flex: 1;
-  font-size: 13px;
-}
-
-.activity-code {
-  font-weight: 600;
-  color: var(--lime);
-}
-
-.activity-time {
-  font-size: 11px;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-/* ── CREATE CODE SECTION ── */
-.create-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 20px;
-}
-
-.create-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field label {
-  font-size: 10px;
-  color: var(--muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-.field input {
-  background: var(--bg2);
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  font-family: 'Figtree', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 11px 14px;
-  outline: none;
-  transition: border-color 0.2s;
-  width: 100%;
-}
-.field input:focus { border-color: var(--lime); }
-.field input::placeholder { color: var(--muted); }
-
-.field-code { flex: 1; }
-.field-plans { width: 90px; }
-
-.btn-create {
-  background: var(--lime);
-  color: #0e0f11;
-  border: none;
-  border-radius: 10px;
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 13px;
-  padding: 11px 18px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-  height: 44px;
-}
-.btn-create:hover { background: #d8ff5a; }
-.btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.create-result {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  font-size: 12px;
-  line-height: 1.6;
-  display: none;
-}
-
-.create-result.success {
-  background: var(--green-dim);
-  border: 1px solid rgba(76,217,123,0.3);
-  color: var(--green);
-  display: block;
-}
-
-.create-result.error {
-  background: var(--red-dim);
-  border: 1px solid rgba(255,87,87,0.3);
-  color: var(--red);
-  display: block;
-}
-
-/* ── MODAL ── */
-.modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.7);
-  z-index: 800;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px;
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.2s;
-  backdrop-filter: blur(4px);
-}
-.modal-overlay.open { opacity: 1; pointer-events: all; }
-
-.modal {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 24px;
-  width: 100%;
-  max-width: 340px;
-  transform: translateY(16px);
-  transition: transform 0.25s cubic-bezier(.22,1,.36,1);
-}
-.modal-overlay.open .modal { transform: translateY(0); }
-
-.modal-title {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 16px;
-  margin-bottom: 6px;
-}
-
-.modal-sub {
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 20px;
-  line-height: 1.5;
-}
-
-.modal-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 16px;
-}
-
-.modal-field label {
-  font-size: 10px;
-  color: var(--muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-.modal-field input {
-  background: var(--bg2);
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  font-family: 'Figtree', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  padding: 12px 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.modal-field input:focus { border-color: var(--lime); }
-
-.modal-btns {
-  display: flex;
-  gap: 10px;
-}
-
-.btn-cancel {
-  flex: 1;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--muted);
-  font-family: 'Figtree', sans-serif;
-  font-weight: 600;
-  font-size: 14px;
-  padding: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.btn-cancel:hover { color: var(--text); }
-
-.btn-confirm {
-  flex: 1;
-  background: var(--lime);
-  border: none;
-  border-radius: 10px;
-  color: #0e0f11;
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: 13px;
-  padding: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-confirm:hover { background: #d8ff5a; }
-.btn-confirm.danger { background: var(--red); color: #fff; }
-.btn-confirm.danger:hover { background: #ff7474; }
-
-/* ── TOAST ── */
-.toast {
-  position: fixed;
-  bottom: calc(env(safe-area-inset-bottom) + 24px);
-  left: 50%;
-  transform: translateX(-50%) translateY(20px);
-  background: var(--card);
-  border: 1px solid var(--border2);
-  color: var(--text);
-  padding: 11px 20px;
-  border-radius: 40px;
-  font-size: 13px;
-  font-weight: 600;
-  z-index: 9999;
-  opacity: 0;
-  transition: all 0.3s cubic-bezier(.22,1,.36,1);
-  white-space: nowrap;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-  pointer-events: none;
-}
-.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-/* ── EMPTY STATE ── */
-.empty {
-  text-align: center;
-  padding: 32px 16px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
+body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* LOGIN */
+#login-screen { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; }
+.login-logo { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+.login-logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:20px; letter-spacing:0.15em; color:var(--lime); }
+.login-tag { font-size:11px; color:var(--muted); letter-spacing:0.2em; text-transform:uppercase; margin-bottom:40px; }
+.login-card { background:var(--card); border:1px solid var(--border); border-radius:20px; padding:28px 24px; width:100%; max-width:380px; }
+.login-label { font-size:11px; color:var(--muted); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:8px; font-weight:600; }
+.login-input { width:100%; background:var(--bg2); border:1.5px solid var(--border); border-radius:12px; color:var(--text); font-family:'Figtree',sans-serif; font-size:15px; font-weight:600; padding:14px 16px; outline:none; margin-bottom:16px; transition:border-color 0.2s; }
+.login-input:focus { border-color:var(--lime); }
+.login-input-wrap { position:relative; }
+.login-eye { position:absolute; right:14px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--muted); padding:4px; }
+.btn-login { width:100%; background:var(--lime); color:#0e0f11; border:none; border-radius:12px; font-family:'Syne',sans-serif; font-weight:800; font-size:14px; padding:14px; cursor:pointer; transition:all 0.2s; }
+.btn-login:hover { background:#d8ff5a; }
+.login-error { color:var(--red); font-size:12px; text-align:center; margin-top:12px; min-height:18px; }
+
+/* APP LAYOUT */
+#app { display:none; }
+.app-header { background:var(--card); border-bottom:1px solid var(--border); padding:calc(env(safe-area-inset-top)+12px) 20px 12px; position:sticky; top:0; z-index:200; }
+.app-header-inner { display:flex; align-items:center; justify-content:space-between; max-width:900px; margin:0 auto; gap:12px; }
+.header-logo { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.header-logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:14px; letter-spacing:0.15em; color:var(--lime); }
+.header-badge { font-size:9px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); background:var(--bg2); border:1px solid var(--border); border-radius:20px; padding:3px 9px; }
+.header-actions { display:flex; align-items:center; gap:8px; }
+
+/* TAB NAV */
+.tab-nav { display:flex; gap:2px; background:var(--bg2); border-radius:12px; padding:3px; }
+.tab-btn { background:none; border:none; border-radius:9px; color:var(--muted); font-family:'Figtree',sans-serif; font-weight:600; font-size:13px; padding:7px 14px; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+.tab-btn.active { background:var(--card); color:var(--text); }
+.tab-btn:hover:not(.active) { color:var(--text); }
+
+.btn-sm { background:var(--bg2); border:1px solid var(--border); border-radius:8px; color:var(--muted); padding:7px 12px; cursor:pointer; font-size:12px; font-family:'Figtree',sans-serif; font-weight:600; display:flex; align-items:center; gap:5px; transition:all 0.15s; }
+.btn-sm:hover { border-color:var(--border2); color:var(--text); }
+.btn-sm.spinning svg { animation:spin 0.6s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.btn-logout { color:var(--muted); font-size:12px; background:none; border:none; cursor:pointer; font-family:'Figtree',sans-serif; padding:4px 8px; }
+.btn-logout:hover { color:var(--red); }
+
+/* CONTENT */
+.content { max-width:900px; margin:0 auto; padding:20px 16px 60px; }
+.tab-section { display:none; }
+.tab-section.active { display:block; }
+
+/* STAT GRID */
+.stats-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px; }
+@media(max-width:500px) { .stats-grid { grid-template-columns:1fr 1fr; } }
+.stat-card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; }
+.stat-val { font-family:'Syne',sans-serif; font-weight:800; font-size:32px; line-height:1; margin-bottom:4px; }
+.stat-label { font-size:11px; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; }
+
+/* SECTION HEADER */
+.section-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; gap:8px; flex-wrap:wrap; }
+.section-title { font-family:'Syne',sans-serif; font-weight:800; font-size:13px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); }
+
+/* SEARCH */
+.search-wrap { position:relative; flex:1; max-width:240px; }
+.search-wrap svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; }
+.search-input { width:100%; background:var(--bg2); border:1px solid var(--border); border-radius:10px; color:var(--text); font-family:'Figtree',sans-serif; font-size:13px; padding:8px 10px 8px 32px; outline:none; transition:border-color 0.2s; }
+.search-input:focus { border-color:var(--lime); }
+.search-input::placeholder { color:var(--muted); }
+
+/* CODES LIST */
+.codes-list { display:flex; flex-direction:column; gap:8px; }
+.code-card { background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; transition:border-color 0.15s; }
+.code-card-top { display:flex; align-items:center; gap:10px; padding:14px 16px; cursor:pointer; }
+.code-card-top:hover { background:var(--card2); }
+.code-status-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.code-info { flex:1; min-width:0; }
+.code-name { font-family:'Syne',sans-serif; font-weight:800; font-size:14px; letter-spacing:0.06em; }
+.code-meta { font-size:11px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.code-note-text { font-size:11px; color:var(--blue); margin-top:2px; font-style:italic; }
+.code-rem { text-align:right; flex-shrink:0; }
+.code-rem-val { font-family:'Syne',sans-serif; font-weight:800; font-size:20px; }
+.code-rem-lbl { font-size:9px; color:var(--muted); letter-spacing:0.08em; }
+.code-btns { display:flex; gap:5px; flex-shrink:0; }
+.btn-icon { width:30px; height:30px; background:var(--bg2); border:1px solid var(--border); border-radius:8px; color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.15s; }
+.btn-icon:hover { border-color:var(--border2); color:var(--text); }
+.btn-icon.lime:hover { border-color:rgba(200,245,66,0.5); color:var(--lime); background:var(--lime-dim); }
+.btn-icon.red:hover { border-color:rgba(255,87,87,0.5); color:var(--red); background:var(--red-dim); }
+.btn-icon.blue:hover { border-color:rgba(87,169,255,0.5); color:var(--blue); background:var(--blue-dim); }
+
+/* CODE EXPAND */
+.code-expand { display:none; border-top:1px solid var(--border); padding:14px 16px; background:var(--card2); }
+.code-expand.open { display:block; }
+.code-expand-plans { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; max-height:160px; overflow-y:auto; }
+.code-plan-row { display:flex; align-items:center; gap:8px; font-size:12px; padding:6px 0; border-bottom:1px solid var(--border); }
+.code-plan-row:last-child { border-bottom:none; }
+.code-note-wrap { display:flex; gap:8px; margin-top:4px; }
+.code-note-input { flex:1; background:var(--bg2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:'Figtree',sans-serif; font-size:13px; padding:8px 12px; outline:none; transition:border-color 0.2s; }
+.code-note-input:focus { border-color:var(--lime); }
+.btn-save-note { background:var(--lime); color:#0e0f11; border:none; border-radius:8px; font-family:'Syne',sans-serif; font-weight:800; font-size:12px; padding:8px 14px; cursor:pointer; white-space:nowrap; }
+
+/* CREATE + BULK */
+.create-card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:12px; }
+.create-card-title { font-family:'Syne',sans-serif; font-weight:800; font-size:13px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:14px; }
+.create-row { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+.field { display:flex; flex-direction:column; gap:5px; }
+.field label { font-size:10px; color:var(--muted); letter-spacing:0.12em; text-transform:uppercase; font-weight:600; }
+.field input { background:var(--bg2); border:1.5px solid var(--border); border-radius:9px; color:var(--text); font-family:'Figtree',sans-serif; font-size:13px; font-weight:600; padding:9px 12px; outline:none; transition:border-color 0.2s; }
+.field input:focus { border-color:var(--lime); }
+.field input::placeholder { color:var(--muted); }
+.field-grow { flex:1; min-width:120px; }
+.field-sm { width:80px; }
+.btn-create { background:var(--lime); color:#0e0f11; border:none; border-radius:9px; font-family:'Syne',sans-serif; font-weight:800; font-size:12px; padding:9px 16px; cursor:pointer; white-space:nowrap; height:38px; transition:all 0.2s; }
+.btn-create:hover { background:#d8ff5a; }
+.btn-create:disabled { opacity:0.5; cursor:not-allowed; }
+.create-result { margin-top:10px; padding:10px 12px; border-radius:9px; font-size:12px; line-height:1.6; display:none; }
+.create-result.ok { background:var(--green-dim); border:1px solid rgba(76,217,123,0.3); color:var(--green); display:block; }
+.create-result.err { background:var(--red-dim); border:1px solid rgba(255,87,87,0.3); color:var(--red); display:block; }
+
+.bulk-result-codes { font-family:'Syne',sans-serif; font-weight:700; font-size:12px; letter-spacing:0.06em; margin-top:8px; background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; white-space:pre-wrap; word-break:break-all; cursor:pointer; }
+.bulk-result-codes:hover { border-color:var(--lime); }
+.btn-export { background:var(--bg2); border:1px solid var(--border); border-radius:9px; color:var(--muted); font-family:'Syne',sans-serif; font-weight:700; font-size:12px; padding:9px 14px; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all 0.15s; }
+.btn-export:hover { border-color:var(--lime); color:var(--lime); }
+
+/* ACTIVITY */
+.activity-list { display:flex; flex-direction:column; gap:0; background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+.activity-item { padding:11px 16px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:10px; }
+.activity-item:last-child { border-bottom:none; }
+.activity-dot { width:6px; height:6px; border-radius:50%; background:var(--lime); flex-shrink:0; margin-top:5px; }
+.activity-text { flex:1; font-size:13px; line-height:1.5; }
+.activity-code { font-weight:700; color:var(--lime); }
+.activity-plan { color:var(--blue); }
+.activity-macros { font-size:11px; color:var(--muted); margin-top:2px; }
+.activity-time { font-size:11px; color:var(--muted); flex-shrink:0; }
+.filter-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.filter-select { background:var(--bg2); border:1px solid var(--border); border-radius:9px; color:var(--text); font-family:'Figtree',sans-serif; font-size:13px; padding:8px 12px; outline:none; transition:border-color 0.2s; cursor:pointer; }
+.filter-select:focus { border-color:var(--lime); }
+.activity-count { font-size:12px; color:var(--muted); }
+
+/* HEALTH */
+.health-grid { display:flex; flex-direction:column; gap:10px; }
+.health-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px 20px; display:flex; align-items:center; gap:14px; }
+.health-status { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.health-status.ok { background:var(--green); box-shadow:0 0 8px rgba(76,217,123,0.4); }
+.health-status.err { background:var(--red); box-shadow:0 0 8px rgba(255,87,87,0.4); }
+.health-status.checking { background:var(--muted); animation:pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
+.health-info { flex:1; }
+.health-title { font-family:'Syne',sans-serif; font-weight:800; font-size:14px; margin-bottom:2px; }
+.health-sub { font-size:12px; color:var(--muted); }
+.health-ms { font-size:12px; color:var(--lime); font-weight:600; }
+
+/* MODAL */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:800; display:flex; align-items:center; justify-content:center; padding:24px; opacity:0; pointer-events:none; transition:opacity 0.2s; backdrop-filter:blur(4px); }
+.modal-overlay.open { opacity:1; pointer-events:all; }
+.modal { background:var(--card); border:1px solid var(--border); border-radius:20px; padding:24px; width:100%; max-width:360px; transform:translateY(16px); transition:transform 0.25s cubic-bezier(.22,1,.36,1); }
+.modal-overlay.open .modal { transform:translateY(0); }
+.modal-title { font-family:'Syne',sans-serif; font-weight:800; font-size:16px; margin-bottom:6px; }
+.modal-sub { font-size:13px; color:var(--muted); margin-bottom:18px; line-height:1.5; }
+.modal-field { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+.modal-field label { font-size:10px; color:var(--muted); letter-spacing:0.12em; text-transform:uppercase; font-weight:600; }
+.modal-field input { background:var(--bg2); border:1.5px solid var(--border); border-radius:10px; color:var(--text); font-family:'Figtree',sans-serif; font-size:15px; font-weight:600; padding:12px 14px; outline:none; transition:border-color 0.2s; }
+.modal-field input:focus { border-color:var(--lime); }
+.modal-btns { display:flex; gap:10px; }
+.btn-cancel { flex:1; background:var(--bg2); border:1px solid var(--border); border-radius:10px; color:var(--muted); font-family:'Figtree',sans-serif; font-weight:600; font-size:14px; padding:12px; cursor:pointer; transition:all 0.15s; }
+.btn-cancel:hover { color:var(--text); }
+.btn-confirm { flex:1; background:var(--lime); border:none; border-radius:10px; color:#0e0f11; font-family:'Syne',sans-serif; font-weight:800; font-size:13px; padding:12px; cursor:pointer; transition:all 0.2s; }
+.btn-confirm:hover { background:#d8ff5a; }
+.btn-confirm.danger { background:var(--red); color:#fff; }
+.btn-confirm.danger:hover { background:#ff7474; }
+
+/* TOAST */
+.toast { position:fixed; bottom:calc(env(safe-area-inset-bottom)+24px); left:50%; transform:translateX(-50%) translateY(20px); background:var(--card); border:1px solid var(--border2); color:var(--text); padding:11px 20px; border-radius:40px; font-size:13px; font-weight:600; z-index:9999; opacity:0; transition:all 0.3s cubic-bezier(.22,1,.36,1); white-space:nowrap; box-shadow:0 8px 32px rgba(0,0,0,0.5); pointer-events:none; }
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+.empty { text-align:center; padding:32px 16px; color:var(--muted); font-size:13px; line-height:1.6; }
 </style>
 </head>
 <body>
@@ -614,14 +192,10 @@ body {
 <!-- LOGIN SCREEN -->
 <div id="login-screen">
   <div class="login-logo">
-    <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="48" height="48" rx="14" fill="#c8f542"/>
-      <path d="M25 7L13 27h12l-4 14 18-22H27L31 7H25z" fill="#0e0f11"/>
-    </svg>
+    <svg width="36" height="36" viewBox="0 0 48 48" fill="none"><rect width="48" height="48" rx="14" fill="#c8f542"/><path d="M25 7L13 27h12l-4 14 18-22H27L31 7H25z" fill="#0e0f11"/></svg>
     <span class="login-logo-text">FUELPLAN</span>
   </div>
   <div class="login-tag">Admin Dashboard</div>
-
   <div class="login-card">
     <div class="login-label">Backend URL</div>
     <input class="login-input" id="login-url" type="url" placeholder="https://your-app.railway.app" autocomplete="off" autocapitalize="off">
@@ -639,32 +213,34 @@ body {
 
 <!-- MAIN APP -->
 <div id="app">
-
-  <div class="header">
-    <div class="header-inner">
+  <div class="app-header">
+    <div class="app-header-inner">
       <div class="header-logo">
-        <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
-          <rect width="48" height="48" rx="14" fill="#c8f542"/>
-          <path d="M25 7L13 27h12l-4 14 18-22H27L31 7H25z" fill="#0e0f11"/>
-        </svg>
+        <svg width="22" height="22" viewBox="0 0 48 48" fill="none"><rect width="48" height="48" rx="14" fill="#c8f542"/><path d="M25 7L13 27h12l-4 14 18-22H27L31 7H25z" fill="#0e0f11"/></svg>
         <span class="header-logo-text">FUELPLAN</span>
         <span class="header-badge">Admin</span>
       </div>
-      <button class="btn-refresh" onclick="refreshAll()" id="refresh-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-5.96"/></svg>
-        Refresh
-      </button>
+      <div class="tab-nav" id="tab-nav">
+        <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+        <button class="tab-btn" data-tab="codes" onclick="switchTab('codes')">Codes</button>
+        <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">Activity</button>
+        <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
+      </div>
+      <div class="header-actions">
+        <button class="btn-sm" onclick="refreshAll()" id="refresh-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-5.96"/></svg>
+          Refresh
+        </button>
+        <button class="btn-logout" onclick="logout()">Log out</button>
+      </div>
     </div>
   </div>
 
   <div class="content">
 
-    <!-- Stats overview -->
-    <div>
-      <div class="section-header">
-        <span class="section-title">Overview</span>
-      </div>
-      <div class="stats-grid" id="stats-grid">
+    <!-- ══ TAB: OVERVIEW ══ -->
+    <div class="tab-section active" id="tab-overview">
+      <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-val" id="stat-total-codes" style="color:var(--lime)">—</div>
           <div class="stat-label">Total Codes</div>
@@ -681,65 +257,160 @@ body {
           <div class="stat-val" id="stat-low-codes" style="color:var(--orange)">—</div>
           <div class="stat-label">Low on Plans</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-plans-saved" style="color:var(--muted)">—</div>
+          <div class="stat-label">Plans Saved</div>
+        </div>
+        <div class="stat-card" style="display:flex;align-items:center;gap:8px;padding:12px 16px">
+          <div id="stat-auto-refresh-dot" style="width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 6px rgba(200,245,66,0.5)"></div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Auto-refresh</div>
+            <div style="font-size:10px;color:var(--muted)">Every 60 seconds</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <div class="section-hdr">
+          <span class="section-title">Recent Activity</span>
+          <span class="activity-count" id="overview-activity-count"></span>
+        </div>
+        <div id="overview-activity"><div class="empty">Loading…</div></div>
       </div>
     </div>
 
-    <!-- Create new code -->
-    <div>
-      <div class="section-header">
-        <span class="section-title">New Activation Code</span>
-      </div>
+    <!-- ══ TAB: CODES ══ -->
+    <div class="tab-section" id="tab-codes">
+
+      <!-- Create single code -->
       <div class="create-card">
+        <div class="create-card-title">New Code</div>
         <div class="create-row">
-          <div class="field field-code">
+          <div class="field field-grow">
             <label>Code</label>
-            <input type="text" id="new-code" placeholder="FUEL-XXXX" autocapitalize="characters" oninput="this.value = this.value.toUpperCase()">
+            <input type="text" id="new-code" placeholder="FUEL-XXXX" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()">
           </div>
-          <div class="field field-plans">
+          <div class="field field-sm">
             <label>Plans</label>
             <input type="number" id="new-plans" placeholder="10" min="1" max="999" value="10">
           </div>
-          <button class="btn-create" onclick="createCode()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Create
-          </button>
+          <button class="btn-create" onclick="createCode()">Create</button>
         </div>
         <div class="create-result" id="create-result"></div>
       </div>
+
+      <!-- Bulk create -->
+      <div class="create-card">
+        <div class="create-card-title">Bulk Create</div>
+        <div class="create-row">
+          <div class="field field-grow">
+            <label>Prefix</label>
+            <input type="text" id="bulk-prefix" placeholder="FUEL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+          </div>
+          <div class="field field-sm">
+            <label>Count</label>
+            <input type="number" id="bulk-count" placeholder="5" min="1" max="50" value="5">
+          </div>
+          <div class="field field-sm">
+            <label>Plans</label>
+            <input type="number" id="bulk-plans" placeholder="10" min="1" max="999" value="10">
+          </div>
+          <button class="btn-create" onclick="bulkCreate()">Generate</button>
+        </div>
+        <div class="create-result" id="bulk-result"></div>
+        <div id="bulk-codes-list" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:6px">
+            <span style="font-size:12px;color:var(--muted)">Click to copy all codes</span>
+            <button class="btn-export" onclick="exportCSV()" style="font-size:11px;padding:6px 10px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export CSV
+            </button>
+          </div>
+          <div class="bulk-result-codes" id="bulk-codes-display" onclick="copyBulkCodes()"></div>
+        </div>
+      </div>
+
+      <!-- Codes list -->
+      <div>
+        <div class="section-hdr">
+          <span class="section-title">All Codes</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="search-wrap">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" id="code-search" placeholder="Search codes…" oninput="filterCodes()">
+            </div>
+            <button class="btn-export" onclick="exportCSV()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export
+            </button>
+          </div>
+        </div>
+        <div class="codes-list" id="codes-list"><div class="empty">Loading codes…</div></div>
+      </div>
     </div>
 
-    <!-- All codes -->
-    <div>
-      <div class="section-header">
-        <span class="section-title">Activation Codes</span>
+    <!-- ══ TAB: ACTIVITY ══ -->
+    <div class="tab-section" id="tab-activity">
+      <div class="filter-row">
+        <select class="filter-select" id="activity-filter-code" onchange="renderActivityTab()">
+          <option value="">All codes</option>
+        </select>
+        <select class="filter-select" id="activity-filter-range" onchange="renderActivityTab()">
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="0">All time</option>
+        </select>
+        <span class="activity-count" id="activity-tab-count"></span>
       </div>
-      <div class="codes-list" id="codes-list">
-        <div class="empty">Loading codes…</div>
-      </div>
+      <div id="activity-tab-list"><div class="empty">Loading…</div></div>
     </div>
 
-    <!-- Recent activity -->
-    <div>
-      <div class="section-header">
-        <span class="section-title">Recent Activity</span>
+    <!-- ══ TAB: HEALTH ══ -->
+    <div class="tab-section" id="tab-health">
+      <div class="section-hdr" style="margin-bottom:16px">
+        <span class="section-title">Health Monitor</span>
+        <button class="btn-sm" onclick="runHealthChecks()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-5.96"/></svg>
+          Check now
+        </button>
       </div>
-      <div id="activity-list">
-        <div class="empty">Loading activity…</div>
+      <div class="health-grid">
+        <div class="health-card">
+          <div class="health-status checking" id="health-backend-dot"></div>
+          <div class="health-info">
+            <div class="health-title">Backend (Railway)</div>
+            <div class="health-sub" id="health-backend-sub">Checking…</div>
+          </div>
+          <div class="health-ms" id="health-backend-ms"></div>
+        </div>
+        <div class="health-card">
+          <div class="health-status checking" id="health-redis-dot"></div>
+          <div class="health-info">
+            <div class="health-title">Redis (Upstash)</div>
+            <div class="health-sub" id="health-redis-sub">Checking…</div>
+          </div>
+          <div class="health-ms" id="health-redis-ms"></div>
+        </div>
+        <div class="health-card">
+          <div class="health-status" style="background:var(--muted)"></div>
+          <div class="health-info">
+            <div class="health-title">Anthropic API</div>
+            <div class="health-sub">Cannot check directly — <a href="https://status.anthropic.com" target="_blank" style="color:var(--blue)">status.anthropic.com</a></div>
+          </div>
+        </div>
       </div>
+      <div style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center">Auto-refreshes every 30 seconds</div>
     </div>
 
   </div>
 </div>
 
-<!-- Edit Plans Modal -->
+<!-- MODALS -->
 <div class="modal-overlay" id="edit-modal">
   <div class="modal">
-    <div class="modal-title">Edit Plans</div>
-    <div class="modal-sub" id="edit-modal-sub">Set remaining plans for this code</div>
-    <div class="modal-field">
-      <label>Remaining Plans</label>
-      <input type="number" id="edit-amount" min="0" max="999" placeholder="10">
-    </div>
+    <div class="modal-title">Set Plans</div>
+    <div class="modal-sub" id="edit-modal-sub"></div>
+    <div class="modal-field"><label>Remaining Plans</label><input type="number" id="edit-amount" min="0" max="999" placeholder="10"></div>
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal('edit-modal')">Cancel</button>
       <button class="btn-confirm" onclick="confirmEdit()">Save</button>
@@ -747,30 +418,25 @@ body {
   </div>
 </div>
 
-<!-- Revoke Modal -->
-<div class="modal-overlay" id="revoke-modal">
+<div class="modal-overlay" id="topup-modal">
   <div class="modal">
-    <div class="modal-title">Revoke Code</div>
-    <div class="modal-sub" id="revoke-modal-sub">This fully deletes the code. It stops working immediately.</div>
+    <div class="modal-title">Top Up Plans</div>
+    <div class="modal-sub" id="topup-modal-sub"></div>
+    <div class="modal-field"><label>Add Plans</label><input type="number" id="topup-amount" min="1" max="999" placeholder="10"></div>
     <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeModal('revoke-modal')">Cancel</button>
-      <button class="btn-confirm danger" onclick="confirmRevoke()">Revoke</button>
+      <button class="btn-cancel" onclick="closeModal('topup-modal')">Cancel</button>
+      <button class="btn-confirm" onclick="confirmTopUp()">Top Up</button>
     </div>
   </div>
 </div>
 
-<!-- Top Up Modal -->
-<div class="modal-overlay" id="topup-modal">
+<div class="modal-overlay" id="revoke-modal">
   <div class="modal">
-    <div class="modal-title">Top Up Plans</div>
-    <div class="modal-sub" id="topup-modal-sub">Add more plans to this code</div>
-    <div class="modal-field">
-      <label>Add Plans</label>
-      <input type="number" id="topup-amount" min="1" max="999" placeholder="10">
-    </div>
+    <div class="modal-title">Revoke Code</div>
+    <div class="modal-sub" id="revoke-modal-sub"></div>
     <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeModal('topup-modal')">Cancel</button>
-      <button class="btn-confirm" onclick="confirmTopUp()">Top Up</button>
+      <button class="btn-cancel" onclick="closeModal('revoke-modal')">Cancel</button>
+      <button class="btn-confirm danger" onclick="confirmRevoke()">Revoke</button>
     </div>
   </div>
 </div>
@@ -783,6 +449,11 @@ let API_BASE = '';
 let ADMIN_KEY = '';
 let currentEditCode = '';
 let currentEditRemaining = 0;
+let allCodes = [];
+let allActivity = [];
+let lastBulkCodes = [];
+let _healthInterval = null;
+let _autoRefreshInterval = null;
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 function toggleKeyVisibility() {
@@ -801,42 +472,40 @@ async function login() {
   const url = document.getElementById('login-url').value.trim().replace(/\/$/, '');
   const key = document.getElementById('login-key').value.trim();
   const errEl = document.getElementById('login-error');
-
   if (!url || !key) { errEl.textContent = 'Enter both URL and admin key'; return; }
-
   errEl.textContent = '';
   const btn = document.querySelector('.btn-login');
-  btn.textContent = 'Connecting…';
-  btn.disabled = true;
-
+  btn.textContent = 'Connecting…'; btn.disabled = true;
   try {
     const res = await fetch(url + '/api/admin/stats', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
       body: JSON.stringify({ adminKey: key })
     });
-
     if (res.status === 401) throw new Error('Wrong admin key');
     if (!res.ok) throw new Error('Cannot reach backend — check URL');
-
-    // Save to localStorage
-    API_BASE = url;
-    ADMIN_KEY = key;
+    API_BASE = url; ADMIN_KEY = key;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ url, key })); } catch(e) {}
-
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     loadAll();
-
-  } catch (err) {
+    startAutoRefresh();
+  } catch(err) {
     errEl.textContent = err.message;
   } finally {
-    btn.textContent = 'Sign In';
-    btn.disabled = false;
+    btn.textContent = 'Sign In'; btn.disabled = false;
   }
 }
 
-// Auto-login if saved
+function logout() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+  clearInterval(_autoRefreshInterval);
+  clearInterval(_healthInterval);
+  API_BASE = ''; ADMIN_KEY = '';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -845,27 +514,38 @@ window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('login-key').value = saved.key;
     }
   } catch(e) {}
-
-  document.getElementById('login-key').addEventListener('keydown', e => {
-    if (e.key === 'Enter') login();
+  document.getElementById('login-key').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+  document.querySelectorAll('.modal-overlay').forEach(o => {
+    o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
   });
 });
 
-// ── API CALLS ─────────────────────────────────────────────────────────────────
-async function api(endpoint, body = {}) {
-  const res = await fetch(API_BASE + endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
-    body: JSON.stringify({ adminKey: ADMIN_KEY, ...body })
-  });
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById('tab-' + tab);
+  if (el) el.classList.add('active');
+  if (tab === 'health') runHealthChecks();
+  if (tab === 'activity') renderActivityTab();
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function api(endpoint, body = {}, method = 'POST') {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }
+  };
+  if (method !== 'GET') opts.body = JSON.stringify({ adminKey: ADMIN_KEY, ...body });
+  const res = await fetch(API_BASE + endpoint, opts);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Request failed');
+    throw new Error(err.error || 'Request failed ' + res.status);
   }
   return res.json();
 }
 
-// ── LOAD DATA ─────────────────────────────────────────────────────────────────
+// ── LOAD ──────────────────────────────────────────────────────────────────────
 async function loadAll() {
   await Promise.all([loadStats(), loadCodes()]);
 }
@@ -877,83 +557,147 @@ async function loadStats() {
     document.getElementById('stat-plans-generated').textContent = data.totalPlansGenerated;
     document.getElementById('stat-active-codes').textContent = data.activeCodes;
     document.getElementById('stat-low-codes').textContent = data.codesNearLimit;
-    renderActivity(data.recentActivity || []);
-  } catch(err) {
-    toast('Failed to load stats');
-  }
+    document.getElementById('stat-plans-saved').textContent = data.totalPlansGenerated; // proxy
+    allActivity = data.recentActivity || [];
+    renderOverviewActivity(allActivity);
+    renderActivityTabFilters();
+    renderActivityTab();
+  } catch(err) { toast('Failed to load stats: ' + err.message); }
 }
 
 async function loadCodes() {
-  const listEl = document.getElementById('codes-list');
   try {
     const data = await api('/api/admin/codes');
-    renderCodes(data.codes || []);
+    allCodes = data.codes || [];
+    renderCodes(allCodes);
+    renderActivityTabFilters();
   } catch(err) {
-    listEl.innerHTML = '<div class="empty">Failed to load codes</div>';
+    document.getElementById('codes-list').innerHTML = '<div class="empty">Failed to load codes</div>';
   }
+}
+
+// ── RENDER CODES ──────────────────────────────────────────────────────────────
+function filterCodes() {
+  const q = (document.getElementById('code-search')?.value || '').toLowerCase();
+  const filtered = q ? allCodes.filter(c => c.code.toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q)) : allCodes;
+  renderCodes(filtered);
 }
 
 function renderCodes(codes) {
-  const listEl = document.getElementById('codes-list');
-  if (!codes.length) {
-    listEl.innerHTML = '<div class="empty">No codes found.<br>Add codes to ACTIVATION_CODES in Railway.</div>';
-    return;
-  }
-
-  listEl.innerHTML = codes.map(c => {
+  const el = document.getElementById('codes-list');
+  if (!codes.length) { el.innerHTML = '<div class="empty">No codes found</div>'; return; }
+  el.innerHTML = codes.map(c => {
     const rem = typeof c.remaining === 'number' ? c.remaining : null;
-    const color = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem <= 2 ? 'var(--orange)' : rem <= 5 ? 'var(--blue)' : 'var(--lime)';
-    const dotColor = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem > 0 ? 'var(--green)' : 'var(--muted)';
-    const lastUsedStr = c.lastUsed
-      ? new Date(c.lastUsed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-      : 'Never used';
+    const dotColor = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem <= 3 ? 'var(--orange)' : 'var(--green)';
+    const remColor = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem <= 3 ? 'var(--orange)' : 'var(--lime)';
+    const lastUsedStr = c.lastUsed ? new Date(c.lastUsed).toLocaleDateString('en-GB', { day:'numeric', month:'short' }) : 'Never';
+    const plansList = (c.plans || []).map(p => `
+      <div class="code-plan-row">
+        <span style="flex:1;color:var(--text)">${escHtml(p.planName || 'Plan')}</span>
+        <span style="color:var(--muted)">${p.userName ? escHtml(p.userName) : ''}</span>
+        <span style="color:var(--muted);margin-left:8px">${p.savedAt ? new Date(p.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : ''}</span>
+      </div>`).join('') || '<div style="color:var(--muted);font-size:12px">No plans saved yet</div>';
 
-    return `
-      <div class="code-row">
+    return `<div class="code-card" id="cc-${escHtml(c.code)}">
+      <div class="code-card-top" onclick="toggleCodeExpand('${escHtml(c.code)}')">
         <div class="code-status-dot" style="background:${dotColor}"></div>
-        <div style="flex:1;min-width:0">
+        <div class="code-info">
           <div class="code-name">${escHtml(c.code)}</div>
-          <div class="code-meta">${c.plansUsed} plans generated · ${lastUsedStr}${c.lastUser ? ' · ' + escHtml(c.lastUser) : ''}</div>
+          <div class="code-meta">${c.plansUsed || 0} generated · Last: ${lastUsedStr}${c.lastUser ? ' · ' + escHtml(c.lastUser) : ''}</div>
+          ${c.note ? `<div class="code-note-text">${escHtml(c.note)}</div>` : ''}
         </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div class="code-remaining" style="color:${color}">${rem ?? '—'}</div>
-          <div class="code-remaining-label">plans left</div>
+        <div class="code-rem">
+          <div class="code-rem-val" style="color:${remColor}">${rem ?? '—'}</div>
+          <div class="code-rem-lbl">left</div>
         </div>
-        <div class="code-actions">
-          <button class="btn-icon success" onclick="openTopUp('${escHtml(c.code)}', ${rem ?? 0})" title="Top up">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <div class="code-btns" onclick="event.stopPropagation()">
+          <button class="btn-icon lime" onclick="openTopUp('${escHtml(c.code)}',${rem ?? 0})" title="Top up">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <button class="btn-icon" onclick="openEdit('${escHtml(c.code)}', ${rem ?? 0})" title="Set plans">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <button class="btn-icon blue" onclick="openEdit('${escHtml(c.code)}',${rem ?? 0})" title="Set plans">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          <button class="btn-icon danger" onclick="openRevoke('${escHtml(c.code)}')" title="Revoke">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          <button class="btn-icon red" onclick="openRevoke('${escHtml(c.code)}')" title="Revoke">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
           </button>
         </div>
       </div>
-    `;
+      <div class="code-expand" id="cexp-${escHtml(c.code)}">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;font-weight:700">Saved Plans (${(c.plans||[]).length})</div>
+        <div class="code-expand-plans">${plansList}</div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;font-weight:700;margin-top:10px">Note</div>
+        <div class="code-note-wrap">
+          <input class="code-note-input" id="note-input-${escHtml(c.code)}" type="text" placeholder="e.g. John Smith · 10 pack March" value="${escHtml(c.note || '')}">
+          <button class="btn-save-note" onclick="saveNote('${escHtml(c.code)}')">Save</button>
+        </div>
+      </div>
+    </div>`;
   }).join('');
 }
 
-function renderActivity(activity) {
-  const el = document.getElementById('activity-list');
-  if (!activity.length) {
-    el.innerHTML = '<div class="empty">No activity yet</div>';
-    return;
+function toggleCodeExpand(code) {
+  const el = document.getElementById('cexp-' + code);
+  if (el) el.classList.toggle('open');
+}
+
+// ── RENDER ACTIVITY ───────────────────────────────────────────────────────────
+function renderOverviewActivity(activity) {
+  const el = document.getElementById('overview-activity');
+  const countEl = document.getElementById('overview-activity-count');
+  if (!activity.length) { el.innerHTML = '<div class="empty">No activity yet</div>'; return; }
+  const recent = activity.slice(0, 10);
+  if (countEl) countEl.textContent = 'Last ' + recent.length;
+  el.innerHTML = '<div class="activity-list">' + recent.map(a => {
+    const time = timeAgo(new Date(a.savedAt));
+    const macroStr = a.macros ? `${a.macros.kcal || '?'} kcal · ${a.macros.protein || '?'}g P · ${a.macros.carbs || '?'}g C · ${a.macros.fat || '?'}g F` : '';
+    return `<div class="activity-item">
+      <div class="activity-dot"></div>
+      <div class="activity-text">
+        <span class="activity-code">${escHtml(a.code)}</span>${a.userName ? ' · ' + escHtml(a.userName) : ''}
+        ${a.planName ? ' · <span class="activity-plan">' + escHtml(a.planName) + '</span>' : ''}
+        ${macroStr ? '<div class="activity-macros">' + escHtml(macroStr) + '</div>' : ''}
+      </div>
+      <div class="activity-time">${time}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderActivityTabFilters() {
+  const codeFilter = document.getElementById('activity-filter-code');
+  if (!codeFilter) return;
+  const prev = codeFilter.value;
+  codeFilter.innerHTML = '<option value="">All codes</option>' +
+    allCodes.map(c => `<option value="${escHtml(c.code)}"${c.code === prev ? ' selected' : ''}>${escHtml(c.code)}</option>`).join('');
+}
+
+function renderActivityTab() {
+  const el = document.getElementById('activity-tab-list');
+  const codeFilter = document.getElementById('activity-filter-code')?.value || '';
+  const rangeDays = parseInt(document.getElementById('activity-filter-range')?.value) || 0;
+  const countEl = document.getElementById('activity-tab-count');
+
+  let items = allActivity;
+  if (codeFilter) items = items.filter(a => a.code === codeFilter);
+  if (rangeDays > 0) {
+    const cutoff = Date.now() - rangeDays * 86400000;
+    items = items.filter(a => new Date(a.savedAt).getTime() >= cutoff);
   }
 
-  el.innerHTML = '<div class="activity-list">' + activity.map(a => {
-    const time = timeAgo(new Date(a.savedAt));
-    return `
-      <div class="activity-item">
-        <div class="activity-dot"></div>
-        <div class="activity-text">
-          Plan generated · <span class="activity-code">${escHtml(a.code)}</span>
-          ${a.userName ? ' · ' + escHtml(a.userName) : ''}
-        </div>
-        <div class="activity-time">${time}</div>
+  if (countEl) countEl.textContent = items.length + ' results';
+  if (!items.length) { el.innerHTML = '<div class="empty">No activity for these filters</div>'; return; }
+
+  el.innerHTML = '<div class="activity-list">' + items.map(a => {
+    const time = new Date(a.savedAt).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    const macroStr = a.macros ? `${a.macros.kcal||'?'} kcal · ${a.macros.protein||'?'}g P · ${a.macros.carbs||'?'}g C · ${a.macros.fat||'?'}g F` : '';
+    return `<div class="activity-item">
+      <div class="activity-dot"></div>
+      <div class="activity-text">
+        <span class="activity-code">${escHtml(a.code)}</span>${a.userName ? ' · ' + escHtml(a.userName) : ''}
+        ${a.planName ? ' · <span class="activity-plan">' + escHtml(a.planName) + '</span>' : ''}
+        ${macroStr ? '<div class="activity-macros">' + escHtml(macroStr) + '</div>' : ''}
       </div>
-    `;
+      <div class="activity-time">${time}</div>
+    </div>`;
   }).join('') + '</div>';
 }
 
@@ -961,112 +705,179 @@ function renderActivity(activity) {
 async function createCode() {
   const code = document.getElementById('new-code').value.trim().toUpperCase();
   const plans = parseInt(document.getElementById('new-plans').value) || 10;
-  const resultEl = document.getElementById('create-result');
-
-  if (!code) { resultEl.className = 'create-result error'; resultEl.textContent = 'Enter a code name'; return; }
-
+  const res = document.getElementById('create-result');
+  if (!code) { res.className='create-result err'; res.textContent='Enter a code name'; return; }
   const btn = document.querySelector('.btn-create');
-  btn.disabled = true; btn.textContent = 'Creating…';
-
+  btn.disabled=true; btn.textContent='Creating…';
   try {
     const data = await api('/api/admin/create-code', { code, plans });
-    resultEl.className = 'create-result success';
-    resultEl.innerHTML = `<strong>${data.code}</strong> is live with ${data.plans} plans. Share it now.`;
+    res.className='create-result ok';
+    res.innerHTML = `<strong>${data.code}</strong> created with ${data.plans} plans.`;
     document.getElementById('new-code').value = '';
-    document.getElementById('new-plans').value = '10';
-    toast('Code created and active immediately');
+    toast('Code created'); await loadCodes(); await loadStats();
+  } catch(err) { res.className='create-result err'; res.textContent=err.message; }
+  finally { btn.disabled=false; btn.textContent='Create'; }
+}
+
+async function bulkCreate() {
+  const prefix = document.getElementById('bulk-prefix').value.trim().toUpperCase();
+  const count = parseInt(document.getElementById('bulk-count').value) || 5;
+  const plans = parseInt(document.getElementById('bulk-plans').value) || 10;
+  const res = document.getElementById('bulk-result');
+  const codesDiv = document.getElementById('bulk-codes-list');
+  if (!prefix) { res.className='create-result err'; res.textContent='Enter a prefix'; return; }
+  const btn = document.querySelectorAll('.btn-create')[1];
+  btn.disabled=true; btn.textContent='Generating…';
+  try {
+    const data = await api('/api/admin/bulk-create', { prefix, count, plans });
+    lastBulkCodes = data.created || [];
+    res.className='create-result ok';
+    res.textContent = `${lastBulkCodes.length} codes created with ${data.plans} plans each.`;
+    document.getElementById('bulk-codes-display').textContent = lastBulkCodes.join('\n');
+    codesDiv.style.display = 'block';
+    toast('Bulk codes created'); await loadCodes(); await loadStats();
+  } catch(err) { res.className='create-result err'; res.textContent=err.message; codesDiv.style.display='none'; }
+  finally { btn.disabled=false; btn.textContent='Generate'; }
+}
+
+function copyBulkCodes() {
+  const text = lastBulkCodes.join('\n');
+  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard')).catch(() => {
+    const el = document.getElementById('bulk-codes-display');
+    const r = document.createRange(); r.selectNode(el);
+    window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
+    toast('Select and copy manually');
+  });
+}
+
+async function saveNote(code) {
+  const note = document.getElementById('note-input-' + code)?.value || '';
+  try {
+    await api('/api/admin/set-note', { code, note });
+    toast('Note saved for ' + code);
     await loadCodes();
+  } catch(err) { toast('Failed: ' + err.message); }
+}
+
+function exportCSV() {
+  const codes = allCodes;
+  if (!codes.length) { toast('No codes to export'); return; }
+  const rows = [['Code','Remaining','PlansUsed','LastActive','LastUser','Note']];
+  codes.forEach(c => {
+    rows.push([
+      c.code, c.remaining ?? '', c.plansUsed || 0,
+      c.lastUsed ? new Date(c.lastUsed).toLocaleDateString('en-GB') : '',
+      c.lastUser || '', (c.note || '').replace(/,/g, ';')
+    ]);
+  });
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'fuelplan-codes-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  toast('CSV downloaded');
+}
+
+// Edit / Top Up / Revoke
+function openEdit(code, remaining) {
+  currentEditCode=code; currentEditRemaining=remaining;
+  document.getElementById('edit-modal-sub').textContent = 'Set exact remaining plans for ' + code;
+  document.getElementById('edit-amount').value = remaining;
+  openModal('edit-modal');
+  setTimeout(()=>document.getElementById('edit-amount').focus(), 300);
+}
+async function confirmEdit() {
+  const amount = parseInt(document.getElementById('edit-amount').value);
+  if (isNaN(amount)||amount<0) { toast('Enter valid number'); return; }
+  try { await api('/api/admin/set-remaining',{code:currentEditCode,amount}); closeModal('edit-modal'); toast(currentEditCode+' → '+amount+' plans'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
+}
+
+function openTopUp(code, remaining) {
+  currentEditCode=code; currentEditRemaining=remaining;
+  document.getElementById('topup-modal-sub').textContent = code+' has '+remaining+' plans. Add:';
+  document.getElementById('topup-amount').value='10';
+  openModal('topup-modal');
+  setTimeout(()=>document.getElementById('topup-amount').focus(), 300);
+}
+async function confirmTopUp() {
+  const add = parseInt(document.getElementById('topup-amount').value);
+  if (isNaN(add)||add<1) { toast('Enter valid number'); return; }
+  const newTotal = currentEditRemaining + add;
+  try { await api('/api/admin/set-remaining',{code:currentEditCode,amount:newTotal}); closeModal('topup-modal'); toast(currentEditCode+' topped up to '+newTotal+' plans'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
+}
+
+function openRevoke(code) {
+  currentEditCode=code;
+  document.getElementById('revoke-modal-sub').textContent = 'Fully delete '+code+'? It stops working immediately.';
+  openModal('revoke-modal');
+}
+async function confirmRevoke() {
+  try { await api('/api/admin/revoke-code',{code:currentEditCode}); closeModal('revoke-modal'); toast(currentEditCode+' revoked'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── HEALTH ────────────────────────────────────────────────────────────────────
+async function runHealthChecks() {
+  // Backend ping
+  const backDot = document.getElementById('health-backend-dot');
+  const backSub = document.getElementById('health-backend-sub');
+  const backMs = document.getElementById('health-backend-ms');
+  backDot.className = 'health-status checking';
+  backSub.textContent = 'Checking…'; backMs.textContent = '';
+  try {
+    const t0 = Date.now();
+    const res = await fetch(API_BASE + '/', { signal: AbortSignal.timeout(6000) });
+    const ms = Date.now() - t0;
+    if (res.ok) {
+      backDot.className = 'health-status ok';
+      backSub.textContent = 'Online';
+      backMs.textContent = ms + 'ms';
+    } else { throw new Error('Status ' + res.status); }
   } catch(err) {
-    resultEl.className = 'create-result error';
-    resultEl.textContent = err.message;
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create';
+    backDot.className = 'health-status err';
+    backSub.textContent = 'Offline — ' + err.message;
+    backMs.textContent = '';
+  }
+
+  // Redis health
+  const redisDot = document.getElementById('health-redis-dot');
+  const redisSub = document.getElementById('health-redis-sub');
+  const redisMs = document.getElementById('health-redis-ms');
+  redisDot.className = 'health-status checking';
+  redisSub.textContent = 'Checking…'; redisMs.textContent = '';
+  try {
+    const data = await api('/api/admin/health', {}, 'GET');
+    if (data.redis === 'ok') {
+      redisDot.className = 'health-status ok';
+      redisSub.textContent = 'Connected';
+      redisMs.textContent = data.responseMs + 'ms';
+    } else { throw new Error('Redis error'); }
+  } catch(err) {
+    redisDot.className = 'health-status err';
+    redisSub.textContent = 'Error — ' + err.message;
+    redisMs.textContent = '';
   }
 }
 
-// Edit plans
-function openEdit(code, remaining) {
-  currentEditCode = code;
-  currentEditRemaining = remaining;
-  document.getElementById('edit-modal-sub').textContent = `Set exact remaining plans for ${code}`;
-  document.getElementById('edit-amount').value = remaining;
-  openModal('edit-modal');
-  setTimeout(() => document.getElementById('edit-amount').focus(), 300);
+// ── AUTO REFRESH ──────────────────────────────────────────────────────────────
+function startAutoRefresh() {
+  clearInterval(_autoRefreshInterval);
+  clearInterval(_healthInterval);
+  _autoRefreshInterval = setInterval(() => { if (API_BASE) loadAll(); }, 60000);
+  _healthInterval = setInterval(() => {
+    const healthTab = document.getElementById('tab-health');
+    if (healthTab && healthTab.classList.contains('active')) runHealthChecks();
+  }, 30000);
 }
 
-async function confirmEdit() {
-  const amount = parseInt(document.getElementById('edit-amount').value);
-  if (isNaN(amount) || amount < 0) { toast('Enter a valid number'); return; }
-  try {
-    await api('/api/admin/set-remaining', { code: currentEditCode, amount });
-    closeModal('edit-modal');
-    toast(`${currentEditCode} → ${amount} plans`);
-    await loadCodes();
-    await loadStats();
-  } catch(err) { toast(err.message); }
-}
-
-// Top up
-function openTopUp(code, remaining) {
-  currentEditCode = code;
-  currentEditRemaining = remaining;
-  document.getElementById('topup-modal-sub').textContent = `${code} currently has ${remaining} plans. Add more:`;
-  document.getElementById('topup-amount').value = '10';
-  openModal('topup-modal');
-  setTimeout(() => document.getElementById('topup-amount').focus(), 300);
-}
-
-async function confirmTopUp() {
-  const add = parseInt(document.getElementById('topup-amount').value);
-  if (isNaN(add) || add < 1) { toast('Enter a valid number'); return; }
-  const newTotal = currentEditRemaining + add;
-  try {
-    await api('/api/admin/set-remaining', { code: currentEditCode, amount: newTotal });
-    closeModal('topup-modal');
-    toast(`${currentEditCode} topped up to ${newTotal} plans`);
-    await loadCodes();
-    await loadStats();
-  } catch(err) { toast(err.message); }
-}
-
-// Revoke
-function openRevoke(code) {
-  currentEditCode = code;
-  document.getElementById('revoke-modal-sub').textContent = `Fully delete ${code}? It will stop working immediately.`;
-  openModal('revoke-modal');
-}
-
-async function confirmRevoke() {
-  try {
-    await api('/api/admin/revoke-code', { code: currentEditCode });
-    closeModal('revoke-modal');
-    toast(`${currentEditCode} revoked`);
-    await loadCodes();
-    await loadStats();
-  } catch(err) { toast(err.message); }
-}
-
-// ── MODAL HELPERS ─────────────────────────────────────────────────────────────
-function openModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-
-// Close modal on overlay click
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) overlay.classList.remove('open');
-  });
-});
-
-// ── REFRESH ───────────────────────────────────────────────────────────────────
 async function refreshAll() {
   const btn = document.getElementById('refresh-btn');
   btn.classList.add('spinning');
   await loadAll();
+  const healthTab = document.getElementById('tab-health');
+  if (healthTab && healthTab.classList.contains('active')) await runHealthChecks();
   btn.classList.remove('spinning');
   toast('Refreshed');
 }
@@ -1074,8 +885,7 @@ async function refreshAll() {
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 function toast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
+  el.textContent = msg; el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 2800);
 }
 
@@ -1086,14 +896,12 @@ function escHtml(str) {
 
 function timeAgo(date) {
   const diff = Date.now() - date.getTime();
-  const m = Math.floor(diff / 60000);
-  const h = Math.floor(diff / 3600000);
-  const d = Math.floor(diff / 86400000);
+  const m = Math.floor(diff/60000), h = Math.floor(diff/3600000), d = Math.floor(diff/86400000);
   if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  if (h < 24) return `${h}h ago`;
-  if (d < 7) return `${d}d ago`;
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  if (m < 60) return m + 'm ago';
+  if (h < 24) return h + 'h ago';
+  if (d < 7) return d + 'd ago';
+  return date.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
 }
 </script>
 </body>
