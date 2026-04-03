@@ -44,7 +44,7 @@ app.post('/api/webhook/lemonsqueezy', express.raw({ type: 'application/json' }),
   if (!order || order.status !== 'paid') return res.json({ received: true });
 
   const code = (payload.meta?.custom_data?.activation_code || '').toUpperCase();
-  const variantId = String(payload.data?.relationships?.variants?.data?.[0]?.id || '');
+  const variantId = String(payload.data?.attributes?.first_order_item?.variant_id || '');
   const credits = LS_PLANS[variantId];
 
   if (!code || !credits) {
