@@ -37,17 +37,26 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
 
 /* APP LAYOUT */
 #app { display:none; }
-.app-header { background:var(--card); border-bottom:1px solid var(--border); padding:calc(env(safe-area-inset-top)+12px) 20px 12px; position:sticky; top:0; z-index:200; }
-.app-header-inner { display:flex; align-items:center; justify-content:space-between; max-width:900px; margin:0 auto; gap:12px; }
+.app-header {
+  background:var(--card);
+  border-bottom:1px solid var(--border);
+  padding-top: calc(env(safe-area-inset-top) + 10px);
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+  position:sticky; top:0; z-index:200;
+}
+.app-header-row1 { display:flex; align-items:center; justify-content:space-between; max-width:900px; margin:0 auto; padding: 0 16px 10px; gap:12px; }
+.app-header-row2 { border-top:1px solid var(--border); overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.app-header-row2::-webkit-scrollbar { display:none; }
+.app-header-row2-inner { display:flex; max-width:900px; margin:0 auto; padding: 6px 12px; gap:2px; min-width:max-content; }
 .header-logo { display:flex; align-items:center; gap:10px; flex-shrink:0; }
 .header-logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:14px; letter-spacing:0.15em; color:var(--lime); }
 .header-badge { font-size:9px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); background:var(--bg2); border:1px solid var(--border); border-radius:20px; padding:3px 9px; }
 .header-actions { display:flex; align-items:center; gap:8px; }
 
 /* TAB NAV */
-.tab-nav { display:flex; gap:2px; background:var(--bg2); border-radius:12px; padding:3px; }
-.tab-btn { background:none; border:none; border-radius:9px; color:var(--muted); font-family:'Figtree',sans-serif; font-weight:600; font-size:13px; padding:7px 14px; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
-.tab-btn.active { background:var(--card); color:var(--text); }
+.tab-btn { background:none; border:none; border-radius:9px; color:var(--muted); font-family:'Figtree',sans-serif; font-weight:600; font-size:13px; padding:8px 16px; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+.tab-btn.active { background:var(--card2); color:var(--text); box-shadow: inset 0 0 0 1px var(--border); }
 .tab-btn:hover:not(.active) { color:var(--text); }
 
 .btn-sm { background:var(--bg2); border:1px solid var(--border); border-radius:8px; color:var(--muted); padding:7px 12px; cursor:pointer; font-size:12px; font-family:'Figtree',sans-serif; font-weight:600; display:flex; align-items:center; gap:5px; transition:all 0.15s; }
@@ -58,7 +67,7 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
 .btn-logout:hover { color:var(--red); }
 
 /* CONTENT */
-.content { max-width:900px; margin:0 auto; padding:20px 16px 60px; }
+.content { max-width:900px; margin:0 auto; padding:20px 16px calc(env(safe-area-inset-bottom) + 40px); }
 .tab-section { display:none; }
 .tab-section.active { display:block; }
 
@@ -214,17 +223,11 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
 <!-- MAIN APP -->
 <div id="app">
   <div class="app-header">
-    <div class="app-header-inner">
+    <div class="app-header-row1">
       <div class="header-logo">
         <svg width="22" height="22" viewBox="0 0 48 48" fill="none"><rect width="48" height="48" rx="14" fill="#c8f542"/><path d="M25 7L13 27h12l-4 14 18-22H27L31 7H25z" fill="#0e0f11"/></svg>
         <span class="header-logo-text">FUELPLAN</span>
         <span class="header-badge">Admin</span>
-      </div>
-      <div class="tab-nav" id="tab-nav">
-        <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
-        <button class="tab-btn" data-tab="codes" onclick="switchTab('codes')">Codes</button>
-        <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">Activity</button>
-        <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
       </div>
       <div class="header-actions">
         <button class="btn-sm" onclick="refreshAll()" id="refresh-btn">
@@ -232,6 +235,14 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
           Refresh
         </button>
         <button class="btn-logout" onclick="logout()">Log out</button>
+      </div>
+    </div>
+    <div class="app-header-row2">
+      <div class="app-header-row2-inner" id="tab-nav">
+        <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+        <button class="tab-btn" data-tab="codes" onclick="switchTab('codes')">Codes</button>
+        <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">Activity</button>
+        <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
       </div>
     </div>
   </div>

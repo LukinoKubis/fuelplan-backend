@@ -348,6 +348,37 @@ app.post('/api/admin/history', requireAdmin, async (req, res) => {
   return res.json({ history });
 });
 
+// ── Suggestion proxy (meal swap, etc.) — validates code but does NOT decrement ─
+app.post('/api/claude/suggest', async (req, res) => {
+  const { activationCode, ...payload } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No activation code provided' });
+  const code = activationCode.trim().toUpperCase();
+  const valid = await validateCode(code);
+  if (!valid) return res.status(403).json({ error: 'Invalid activation code' });
+  // Cap tokens to prevent abuse
+  if (payload.max_tokens && payload.max_tokens > 1200) payload.max_tokens = 1200;
+  if (payload.messages) payload.messages = sanitizeUserContent(payload.messages);
+  try {
+    const response = await axios.post(
+      'https://api.anthropic.com/v1/messages',
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        timeout: 30000
+      }
+    );
+    return res.status(response.status).json(response.data);
+  } catch (err) {
+    const isTimeout = err.code === 'ECONNABORTED' || err.message.includes('timeout');
+    if (isTimeout) return res.status(504).json({ error: 'Request timed out — please try again.' });
+    return res.status(500).json({ error: 'Claude API error — please try again.' });
+  }
+});
+
 // ── Admin: set note for a code ────────────────────────────────────────────────
 app.post('/api/admin/set-note', requireAdmin, async (req, res) => {
   const { code, note } = req.body;
