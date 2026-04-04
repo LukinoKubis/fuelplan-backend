@@ -350,6 +350,21 @@ app.post('/api/history/delete', async (req, res) => {
   }
 });
 
+// ── View archived plans (metadata only) ──────────────────────────────────────
+app.post('/api/history/archive', async (req, res) => {
+  const { activationCode } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+  try {
+    const raw = await redisCommand('GET', 'fuelplan:archive:' + code);
+    const archive = raw ? JSON.parse(raw) : [];
+    return res.json({ archive });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── User tracking data (calendar, weights, notes, water goal) ────────────────
 app.post('/api/tracking/save', async (req, res) => {
   const { activationCode, data } = req.body;
@@ -853,7 +868,19 @@ async function getAllOrders() {
 async function saveToHistory(code, entry) {
   let history = await getHistory(code);
   history.unshift(entry);
-  if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
+  if (history.length > MAX_HISTORY) {
+    // Auto-archive overflow instead of hard deleting
+    const overflow = history.slice(MAX_HISTORY);
+    history = history.slice(0, MAX_HISTORY);
+    try {
+      const archiveRaw = await redisCommand('GET', 'fuelplan:archive:' + code);
+      let archive = archiveRaw ? JSON.parse(archiveRaw) : [];
+      // Store only metadata in archive (no full plan JSON — save Redis space)
+      overflow.forEach(e => archive.unshift({ id: e.id, savedAt: e.savedAt, userName: e.userName, planName: e.planName, macros: e.macros }));
+      archive = archive.slice(0, 50); // keep up to 50 archived plan records
+      await redisCommand('SET', 'fuelplan:archive:' + code, JSON.stringify(archive));
+    } catch (e) { /* non-critical */ }
+  }
   await redisCommand('SET', 'fuelplan:history:' + code, JSON.stringify(history));
 }
 
