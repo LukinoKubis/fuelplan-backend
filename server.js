@@ -22,6 +22,22 @@ if (VAPID_PRIVATE_KEY) {
   }
 }
 
+// ── Simple in-memory rate limiter ────────────────────────────────────────────
+const _rateLimitMap = new Map();
+function rateLimit(key, maxRequests, windowMs) {
+  const now = Date.now();
+  const entry = _rateLimitMap.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + windowMs; }
+  entry.count++;
+  _rateLimitMap.set(key, entry);
+  return entry.count <= maxRequests;
+}
+// Clean up old entries every 10 minutes
+setInterval(function() {
+  const now = Date.now();
+  for (const [k, v] of _rateLimitMap) { if (now > v.resetAt) _rateLimitMap.delete(k); }
+}, 600000);
+
 // ── Lemon Squeezy credit map (variant ID → credits) ──────────────────────────
 const LS_PLANS = {
   [process.env.LS_VARIANT_5]:  5,
@@ -339,6 +355,7 @@ app.post('/api/tracking/save', async (req, res) => {
   const { activationCode, data } = req.body;
   if (!activationCode) return res.status(401).json({ error: 'No code' });
   const code = activationCode.trim().toUpperCase();
+  if (!rateLimit('tracking:save:' + code, 30, 60000)) return res.status(429).json({ error: 'Too many requests' });
   if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'No data' });
 
@@ -356,6 +373,7 @@ app.post('/api/tracking/get', async (req, res) => {
   const { activationCode } = req.body;
   if (!activationCode) return res.status(401).json({ error: 'No code' });
   const code = activationCode.trim().toUpperCase();
+  if (!rateLimit('tracking:get:' + code, 10, 60000)) return res.status(429).json({ error: 'Too many requests' });
   if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
 
   try {
