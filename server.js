@@ -851,9 +851,7 @@ app.post('/api/create-checkout', async (req, res) => {
   if (!variantId) return res.status(400).json({ error: 'Invalid plan' });
   if (!process.env.LS_API_KEY) return res.status(503).json({ error: 'Payments not configured' });
 
-  const exists = await codeExists(code);
-  if (!exists) return res.status(403).json({ error: 'Code not found' });
-
+  // Allow new users (code not yet in system) — webhook creates the code after payment
   const FRONTEND = 'https://fuelplan.fit';
 
   try {
