@@ -404,6 +404,36 @@ function mergeTrackingData(existing, incoming) {
   return merged;
 }
 
+// ── Data export — dumps all user data as JSON ─────────────────────────────────
+app.post('/api/export', async (req, res) => {
+  const { activationCode } = req.body;
+  if (!activationCode) return res.status(401).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+
+  try {
+    const [trackingRaw, historyRaw] = await Promise.all([
+      redisCommand('GET', 'fuelplan:tracking:' + code),
+      redisCommand('GET', 'fuelplan:history:' + code),
+    ]);
+    const tracking = trackingRaw ? JSON.parse(trackingRaw) : {};
+    const history = historyRaw ? JSON.parse(historyRaw) : [];
+    const remaining = await redisCommand('GET', 'fuelplan:remaining:' + code);
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      activationCode: code,
+      plansRemaining: remaining !== null ? parseInt(remaining) : null,
+      savedPlans: history,
+      tracking,
+    };
+    res.setHeader('Content-Disposition', 'attachment; filename="fuelplan-export.json"');
+    res.setHeader('Content-Type', 'application/json');
+    return res.json(exportData);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Web Push endpoints ────────────────────────────────────────────────────────
 // Returns public VAPID key so frontend can subscribe
 app.get('/api/push/vapid-key', (req, res) => {
