@@ -884,6 +884,68 @@ async function saveToHistory(code, entry) {
   await redisCommand('SET', 'fuelplan:history:' + code, JSON.stringify(history));
 }
 
+// ── Weekly summary push notifications ─────────────────────────────────────────
+async function sendWeeklySummaryNotifications() {
+  if (!VAPID_PRIVATE_KEY) return;
+  console.log('[Weekly] Sending weekly summary push notifications…');
+  try {
+    const codes = await getAllCodes();
+    let totalSent = 0;
+    for (const code of codes) {
+      const subs = await getPushSubscriptions(code);
+      if (!subs.length) continue;
+      const tracking = await getTrackingData(code);
+      const weights = (tracking.weights || []).slice(0, 7);
+      const latestWeight = weights[0] ? weights[0].displayVal : null;
+      const payload = JSON.stringify({
+        title: 'Fuelplan Weekly',
+        body: latestWeight
+          ? 'New week, new goals! Current weight: ' + latestWeight + '. Open your plan to get started.'
+          : 'New week, new goals! Open Fuelplan to prep your meals.',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: 'fuelplan-weekly',
+        url: '/'
+      });
+      const stale = [];
+      await Promise.all(subs.map(async sub => {
+        try { await webPush.sendNotification(sub, payload); totalSent++; }
+        catch (e) { if (e.statusCode === 410 || e.statusCode === 404) stale.push(sub.endpoint); }
+      }));
+      if (stale.length) {
+        const fresh = subs.filter(s => !stale.includes(s.endpoint));
+        await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(fresh));
+      }
+    }
+    console.log('[Weekly] Sent ' + totalSent + ' notifications');
+  } catch (e) {
+    console.error('[Weekly] Error:', e.message);
+  }
+}
+
+// Admin trigger for weekly summary
+app.post('/api/admin/send-weekly', requireAdmin, async (req, res) => {
+  await sendWeeklySummaryNotifications();
+  res.json({ ok: true });
+});
+
+// Sunday 8pm UTC cron-style check (runs every hour, fires once on Sunday 20:xx)
+const _weeklySentKey = 'fuelplan:weeklySentWeek';
+setInterval(async function() {
+  const now = new Date();
+  if (now.getUTCDay() !== 0 || now.getUTCHours() !== 20) return; // Sunday 8pm UTC only
+  try {
+    // Check we haven't sent this week already
+    const weekNum = Math.floor(Date.now() / (7 * 24 * 3600 * 1000));
+    const lastSent = await redisCommand('GET', _weeklySentKey);
+    if (lastSent && parseInt(lastSent) === weekNum) return;
+    await redisCommand('SET', _weeklySentKey, String(weekNum));
+    await sendWeeklySummaryNotifications();
+  } catch (e) {
+    console.error('[Weekly cron]', e.message);
+  }
+}, 3600000); // check every hour
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`Fuelplan backend running on port ${PORT}`);
