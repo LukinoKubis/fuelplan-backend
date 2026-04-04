@@ -15,17 +15,21 @@ Deployed to Railway at https://fuelplan-backend-production.up.railway.app
 Node.js, Express, Axios, Upstash Redis (REST API — no persistent connection needed)
 
 ## Key endpoints
-POST /api/claude          — validates code, decrements credit, proxies to Anthropic
-POST /api/usage           — returns remaining credits for a code
-POST /api/history/save    — saves plan to Redis (max 5 per code, newest first)
-POST /api/history/get     — returns metadata list (id, savedAt, planName, macros)
-POST /api/history/restore — returns full plan JSON for a given planId
-POST /api/history/delete  — removes a plan from history
+POST /api/claude               — validates code, decrements credit, proxies to Anthropic
+POST /api/usage                — returns remaining credits for a code
+POST /api/history/save         — saves plan to Redis (max 5 per code, newest first)
+POST /api/history/get          — returns metadata list (id, savedAt, planName, macros)
+POST /api/history/restore      — returns full plan JSON for a given planId
+POST /api/history/delete       — removes a plan from history
+POST /api/account/link-email   — links activation code to email (SHA-256 hashed)
+POST /api/account/recover      — sends activation code to email if linked (rate: 3/hour)
 
 ## Redis key structure
-fuelplan:codes          — Set of valid activation codes
-fuelplan:remaining:CODE — remaining generations (integer string)
-fuelplan:history:CODE   — JSON array, max 5 entries, newest first
+fuelplan:codes              — Set of valid activation codes
+fuelplan:remaining:CODE     — remaining generations (integer string)
+fuelplan:history:CODE       — JSON array, max 5 entries, newest first
+fuelplan:email:EMAIL_HASH   — activation code linked to this email hash
+fuelplan:email_of:CODE      — email hash for a given code (reverse lookup)
 
 ## Environment variables (managed via Railway CLI, not hardcoded)
 ANTHROPIC_API_KEY          — Anthropic API key
@@ -34,6 +38,8 @@ UPSTASH_REDIS_REST_TOKEN   — Upstash auth token
 ADMIN_KEY                  — key required for /api/admin/* endpoints
 DEFAULT_PLAN_LIMIT         — how many generations a new code gets (e.g. 10)
 FRONTEND_URL               — https://fuelplan.fit (used in CORS allowlist)
+RESEND_API_KEY             — Resend.com API key (free tier: 3000 emails/month)
+FROM_EMAIL                 — sender address, e.g. "Fuelplan <noreply@fuelplan.fit>"
 
 ## Railway CLI — use this instead of the dashboard
 
