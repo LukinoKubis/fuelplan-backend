@@ -694,6 +694,59 @@ app.post('/api/claude/suggest', async (req, res) => {
   }
 });
 
+// ── Email recovery ────────────────────────────────────────────────────────────
+// Link an email address to an activation code (hashed for privacy)
+app.post('/api/account/link-email', async (req, res) => {
+  const { activationCode, email } = req.body;
+  if (!activationCode || !email) return res.status(400).json({ error: 'code and email required' });
+  const code = activationCode.trim().toUpperCase();
+  if (!await validateCode(code)) return res.status(403).json({ error: 'Invalid code' });
+  const emailClean = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean)) return res.status(400).json({ error: 'Invalid email' });
+  const emailHash = crypto.createHash('sha256').update(emailClean).digest('hex');
+  try {
+    await redisCommand('SET', 'fuelplan:email:' + emailHash, code);
+    await redisCommand('SET', 'fuelplan:email_of:' + code, emailHash);
+    return res.json({ ok: true });
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Send recovery email with activation code
+app.post('/api/account/recover', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  const emailClean = email.trim().toLowerCase();
+  if (!rateLimit('recover:' + emailClean, 3, 3600000)) {
+    // Still return ok to not leak whether email exists
+    return res.json({ ok: true });
+  }
+  const emailHash = crypto.createHash('sha256').update(emailClean).digest('hex');
+  try {
+    const code = await redisCommand('GET', 'fuelplan:email:' + emailHash);
+    if (code && process.env.RESEND_API_KEY) {
+      await axios.post('https://api.resend.com/emails', {
+        from: process.env.FROM_EMAIL || 'Fuelplan <noreply@fuelplan.fit>',
+        to: [emailClean],
+        subject: 'Your Fuelplan access code',
+        html: '<p>Hi — here\'s your Fuelplan activation code: <strong>' + code + '</strong></p>'
+          + '<p>Enter it at <a href="https://fuelplan.fit">fuelplan.fit</a> to access your plan.</p>'
+          + '<p>— The Fuelplan team</p>'
+      }, {
+        headers: {
+          Authorization: 'Bearer ' + process.env.RESEND_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+  } catch(err) {
+    console.error('Email recovery error:', err.message);
+  }
+  // Always return ok (don't leak whether email was found)
+  return res.json({ ok: true });
+});
+
 // ── Admin: set note for a code ────────────────────────────────────────────────
 app.post('/api/admin/set-note', requireAdmin, async (req, res) => {
   const { code, note } = req.body;

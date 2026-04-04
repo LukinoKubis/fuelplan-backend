@@ -295,6 +295,28 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
         </div>
       </div>
 
+      <!-- Revenue summary on Overview -->
+      <div style="margin-bottom:20px">
+        <div class="section-hdr" style="margin-bottom:10px">
+          <span class="section-title">Revenue</span>
+          <button class="btn-sm" onclick="switchTab('orders')" style="font-size:11px">View all orders →</button>
+        </div>
+        <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0">
+          <div class="stat-card">
+            <div class="stat-val" id="overview-total-rev" style="color:var(--lime);font-size:22px">—</div>
+            <div class="stat-label">Total Revenue</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="overview-month-rev" style="color:var(--blue);font-size:22px">—</div>
+            <div class="stat-label">This Month</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="overview-order-count" style="color:var(--green);font-size:22px">—</div>
+            <div class="stat-label">Total Orders</div>
+          </div>
+        </div>
+      </div>
+
       <div style="margin-bottom:20px">
         <div class="section-hdr">
           <span class="section-title">Recent Activity</span>
@@ -783,6 +805,13 @@ async function loadOrders() {
     document.getElementById('ord-total-count').textContent = s.totalOrders || 0;
     document.getElementById('ord-new-count').textContent = s.newCodes || 0;
     document.getElementById('ord-topup-count').textContent = s.topUps || 0;
+    // Update overview revenue cards
+    const ovTotalRev = document.getElementById('overview-total-rev');
+    const ovMonthRev = document.getElementById('overview-month-rev');
+    const ovOrderCount = document.getElementById('overview-order-count');
+    if (ovTotalRev) ovTotalRev.textContent = fmt(s.totalRevenue || 0, cur);
+    if (ovMonthRev) ovMonthRev.textContent = fmt(s.monthRevenue || 0, cur);
+    if (ovOrderCount) ovOrderCount.textContent = s.totalOrders || 0;
     renderOrdersTab();
   } catch(err) {
     document.getElementById('orders-list').innerHTML = '<div class="empty">Failed to load orders</div>';
