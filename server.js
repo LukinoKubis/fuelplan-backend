@@ -557,6 +557,27 @@ async function getPushSubscriptions(code) {
   try { return JSON.parse(raw); } catch { return []; }
 }
 
+// ── Register new code (pre-checkout, 0 credits) ───────────────────────────────
+// Called before Lemon Squeezy checkout so the code exists in Redis on return.
+// Safe to call multiple times — no-op if code already exists.
+app.post('/api/register-code', async (req, res) => {
+  const { activationCode } = req.body;
+  if (!activationCode) return res.status(400).json({ error: 'No code' });
+  const code = activationCode.trim().toUpperCase();
+  if (!code || code.length < 4) return res.status(400).json({ error: 'Invalid code format' });
+  try {
+    const exists = await codeExists(code);
+    if (!exists) {
+      await addCode(code);
+      await redisCommand('SET', 'fuelplan:remaining:' + code, 0);
+      console.log('Registered new code (pre-checkout):', code);
+    }
+    res.json({ ok: true, isNew: !exists });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Usage check ───────────────────────────────────────────────────────────────
 app.post('/api/usage', async (req, res) => {
   const { activationCode } = req.body;
