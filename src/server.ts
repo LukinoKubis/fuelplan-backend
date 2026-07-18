@@ -1,0 +1,1152 @@
+import 'dotenv/config'
+import express, { type Request, type Response, type NextFunction } from 'express'
+import axios from 'axios'
+import path from 'path'
+import crypto from 'crypto'
+import webPush from 'web-push'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const app = express()
+const PORT = process.env.PORT || 3000
+const MAX_HISTORY = 5
+
+// ── Shared types ──────────────────────────────────────────────────────────
+interface Macros {
+  kcal?: number
+  protein?: number
+  carbs?: number
+  fat?: number
+  [key: string]: unknown
+}
+
+interface HistoryEntry {
+  id: number
+  savedAt: string
+  userName: string
+  planName: string
+  macros: Macros
+  plan: unknown
+}
+
+interface ArchiveEntry {
+  id: number
+  savedAt: string
+  userName: string
+  planName: string
+  macros: Macros
+}
+
+interface OrderRecord {
+  id: string
+  code: string
+  credits: number
+  variantId: string
+  total: number
+  subtotal: number
+  tax: number
+  currency: string
+  createdAt: string
+  type: 'new' | 'topup' | null
+}
+
+interface PushSubscription {
+  endpoint: string
+  keys?: { p256dh: string; auth: string }
+  [key: string]: unknown
+}
+
+interface TrackingData {
+  calendarLog?: Record<string, unknown>
+  weights?: { date: string; [key: string]: unknown }[]
+  dayNotes?: Record<string, unknown>
+  waterGoal?: number
+  updatedAt?: string
+  [key: string]: unknown
+}
+
+// ── Web Push / VAPID setup ────────────────────────────────────────────────────
+const VAPID_PUBLIC_KEY =
+  process.env.VAPID_PUBLIC_KEY ||
+  'BJ8LlwEHVKVb0pKlZLXVw1-rlu8rQvQ4sYccKjTlGssQRjq_xBA9lOoziy3XOk9tnugGVl0zjjpols2Xu8nnloQ'
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY
+const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:support@fuelplan.fit'
+
+if (VAPID_PRIVATE_KEY) {
+  try {
+    webPush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+  } catch (e) {
+    console.error('VAPID setup failed:', (e as Error).message)
+  }
+}
+
+// ── Simple in-memory rate limiter ────────────────────────────────────────────
+const _rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+function rateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now()
+  const entry = _rateLimitMap.get(key) || { count: 0, resetAt: now + windowMs }
+  if (now > entry.resetAt) {
+    entry.count = 0
+    entry.resetAt = now + windowMs
+  }
+  entry.count++
+  _rateLimitMap.set(key, entry)
+  return entry.count <= maxRequests
+}
+// Clean up old entries every 10 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [k, v] of _rateLimitMap) {
+    if (now > v.resetAt) _rateLimitMap.delete(k)
+  }
+}, 600000)
+
+// ── Lemon Squeezy credit map (variant ID → credits) ──────────────────────────
+const LS_PLANS: Record<string, number> = {
+  [process.env.LS_VARIANT_5 || '']: 5,
+  [process.env.LS_VARIANT_10 || '']: 10,
+  [process.env.LS_VARIANT_20 || '']: 20,
+}
+
+// ── Middleware ────────────────────────────────────────────────────────────────
+// LS webhook needs raw body for signature check — must come BEFORE express.json()
+app.post('/api/webhook/lemonsqueezy', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  const secret = process.env.LS_WEBHOOK_SECRET
+  const signature = req.headers['x-signature'] as string | undefined
+
+  if (!secret || !signature) {
+    console.error('LS webhook: missing secret or signature')
+    return res.status(400).send('Missing signature')
+  }
+
+  const body = req.body as Buffer
+  const hmac = crypto.createHmac('sha256', secret).update(body).digest('hex')
+  if (hmac !== signature) {
+    console.error('LS webhook: signature mismatch')
+    return res.status(400).send('Signature mismatch')
+  }
+
+  let payload: any
+  try {
+    payload = JSON.parse(body.toString())
+  } catch {
+    return res.status(400).send('Invalid JSON')
+  }
+
+  const eventName = payload.meta?.event_name
+  if (eventName !== 'order_created') return res.json({ received: true })
+
+  const order = payload.data?.attributes
+  if (!order || order.status !== 'paid') return res.json({ received: true })
+
+  const code = (payload.meta?.custom_data?.activation_code || '').toUpperCase()
+  const variantId = String(payload.data?.attributes?.first_order_item?.variant_id || '')
+  const credits = LS_PLANS[variantId]
+
+  if (!code || !credits) {
+    console.error('LS webhook: missing code or unrecognised variant', { code, variantId })
+    return res.json({ received: true })
+  }
+
+  const orderAttr = payload.data?.attributes || {}
+  const orderRecord: OrderRecord = {
+    id: payload.data?.id || '',
+    code,
+    credits,
+    variantId,
+    total: orderAttr.total || 0,
+    subtotal: orderAttr.subtotal || 0,
+    tax: orderAttr.tax || 0,
+    currency: (orderAttr.currency || 'EUR').toUpperCase(),
+    createdAt: orderAttr.created_at || new Date().toISOString(),
+    type: null,
+  }
+
+  try {
+    const exists = await codeExists(code)
+    orderRecord.type = exists ? 'topup' : 'new'
+    if (exists) {
+      await redisCommand('INCRBY', 'fuelplan:remaining:' + code, credits)
+      console.log(`LS: topped up ${code} by ${credits} credits`)
+    } else {
+      await addCode(code)
+      await redisCommand('SET', 'fuelplan:remaining:' + code, credits)
+      console.log(`LS: created new code ${code} with ${credits} credits`)
+    }
+    await saveOrderRecord(orderRecord)
+  } catch (err) {
+    console.error('Redis error in LS webhook:', err)
+    return res.status(500).json({ error: 'Redis error' })
+  }
+
+  res.json({ received: true })
+})
+
+app.use(express.json({ limit: '4mb' }))
+
+// CORS
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const allowed = [
+    (process.env.FRONTEND_URL || '').replace(/\/$/, ''),
+    'https://fuelplan.fit',
+    'https://www.fuelplan.fit',
+    'https://fuelplan.netlify.app',
+    'http://localhost:3000',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+  ].filter(Boolean)
+
+  const origin = req.headers.origin
+
+  // Allow if no origin (direct API calls, mobile apps) or origin is in allowlist
+  if (!origin || allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*')
+  } else {
+    // Still allow — don't block unknown origins, just don't echo them
+    res.setHeader('Access-Control-Allow-Origin', '*')
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key')
+  if (req.method === 'OPTIONS') return res.sendStatus(200)
+  next()
+})
+
+// ── Input sanitization ────────────────────────────────────────────────────────
+interface ClaudeMessage {
+  role: string
+  content: unknown
+}
+
+function sanitizeUserContent(messages: unknown): unknown {
+  if (!Array.isArray(messages)) return messages
+  return messages.map((msg: ClaudeMessage) => {
+    if (typeof msg.content !== 'string') return msg
+    if (msg.content.length > 3000) {
+      console.warn('Message content truncated')
+      msg.content = msg.content.slice(0, 3000)
+    }
+    return msg
+  })
+}
+
+// ── Admin middleware ──────────────────────────────────────────────────────────
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const key = (req.headers['x-admin-key'] as string | undefined) || req.body?.adminKey
+  if (!process.env.ADMIN_KEY || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+  next()
+}
+
+// ── Serve admin dashboard ─────────────────────────────────────────────────────
+app.get('/admin', (req: Request, res: Response) => {
+  res.sendFile(path.join(__dirname, '..', 'admin.html'))
+})
+
+app.get('/', (req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'fuelplan-backend' })
+})
+
+// ── Redis: code registry (stored as a Redis Set) ──────────────────────────────
+async function getAllCodes(): Promise<string[]> {
+  const result = await redisCommand('SMEMBERS', 'fuelplan:codes')
+  return Array.isArray(result) ? result.map((c: string) => c.toUpperCase()).sort() : []
+}
+
+async function codeExists(code: string): Promise<boolean> {
+  const result = await redisCommand('SISMEMBER', 'fuelplan:codes', code.toUpperCase())
+  return result === 1
+}
+
+async function addCode(code: string): Promise<void> {
+  await redisCommand('SADD', 'fuelplan:codes', code.toUpperCase())
+}
+
+async function removeCode(code: string): Promise<void> {
+  await redisCommand('SREM', 'fuelplan:codes', code.toUpperCase())
+}
+
+// ── Validate code (checks Redis, falls back to env var for migration) ─────────
+async function validateCode(code: string | undefined): Promise<boolean> {
+  if (!code) return false
+  const c = code.trim().toUpperCase()
+  // Check Redis set first
+  const inRedis = await codeExists(c)
+  if (inRedis) return true
+  // Fallback: env var (for existing codes during migration)
+  const envCodes = (process.env.ACTIVATION_CODES || '')
+    .split(',')
+    .map((x) => x.trim().toUpperCase())
+    .filter(Boolean)
+  if (envCodes.includes(c)) {
+    // Migrate to Redis automatically
+    await addCode(c)
+    return true
+  }
+  return false
+}
+
+// ── Main Claude proxy ─────────────────────────────────────────────────────────
+interface ClaudeProxyBody {
+  activationCode?: string
+  planMeta?: HistoryEntry
+  messages?: ClaudeMessage[]
+  [key: string]: unknown
+}
+
+app.post('/api/claude', async (req: Request, res: Response) => {
+  const { activationCode, planMeta, ...payload } = req.body as ClaudeProxyBody
+
+  if (!activationCode) return res.status(401).json({ error: 'No activation code provided' })
+
+  const code = activationCode.trim().toUpperCase()
+
+  // Run validation + remaining check IN PARALLEL — saves ~150-300ms of serial Redis round trips
+  const [valid, remaining] = await Promise.all([validateCode(code), getRemaining(code)])
+
+  if (!valid) return res.status(403).json({ error: 'Invalid activation code' })
+
+  if (remaining === null) {
+    // First use — set default, fire and forget (don't block the request)
+    setRemaining(code, parseInt(process.env.DEFAULT_PLAN_LIMIT || '') || 10).catch(() => {})
+  } else if (remaining <= 0) {
+    return res.status(402).json({
+      error: 'Plan limit reached',
+      message: 'You have used all your meal plans. Contact us to top up your code.',
+      remaining: 0,
+    })
+  }
+
+  if (payload.messages) payload.messages = sanitizeUserContent(payload.messages) as ClaudeMessage[]
+
+  try {
+    const response = await axios.post('https://api.anthropic.com/v1/messages', payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      timeout: 120000,
+    })
+
+    // Fire Redis writes in parallel after Anthropic responds — client doesn't wait for these
+    const writes: Promise<unknown>[] = [decrementRemaining(code)]
+    if (planMeta) writes.push(saveToHistory(code, planMeta))
+    Promise.all(writes).catch((err) => console.error('Post-write error:', err.message))
+
+    return res.status(response.status).json(response.data)
+  } catch (err) {
+    const anthropicMsg = (err as any).response?.data?.error?.message
+    const isTimeout = (err as any).code === 'ECONNABORTED' || (err as Error).message.includes('timeout')
+    if (isTimeout) return res.status(504).json({ error: 'Request timed out — please try again.' })
+    if ((err as any).response?.status === 529 || (err as any).response?.status === 503) {
+      return res.status(503).json({ error: 'Claude API is temporarily overloaded — please try again in a moment.' })
+    }
+    return res.status(500).json({ error: anthropicMsg || 'Claude API error — please try again.' })
+  }
+})
+
+// ── History endpoints ─────────────────────────────────────────────────────────
+interface HistorySaveBody {
+  activationCode?: string
+  plan?: { summary?: Macros; [key: string]: unknown }
+  userName?: string
+  planName?: string
+  macros?: Macros
+}
+
+app.post('/api/history/save', async (req: Request, res: Response) => {
+  const { activationCode, plan, userName, planName, macros } = req.body as HistorySaveBody
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  if (!plan) return res.status(400).json({ error: 'No plan data' })
+
+  const entry: HistoryEntry = {
+    id: Date.now(),
+    savedAt: new Date().toISOString(),
+    userName: userName || 'User',
+    planName: planName || 'My Plan',
+    macros: macros || plan.summary || {},
+    plan,
+  }
+
+  try {
+    await saveToHistory(code, entry)
+    return res.json({ ok: true, id: entry.id })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/history/get', async (req: Request, res: Response) => {
+  const { activationCode } = req.body as { activationCode?: string }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+
+  try {
+    const history = await getHistory(code)
+    return res.json({
+      history: history.map((e) => ({ id: e.id, savedAt: e.savedAt, userName: e.userName, planName: e.planName, macros: e.macros })),
+    })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/history/restore', async (req: Request, res: Response) => {
+  const { activationCode, planId } = req.body as { activationCode?: string; planId?: number }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  if (!planId) return res.status(400).json({ error: 'No planId' })
+
+  try {
+    const history = await getHistory(code)
+    const entry = history.find((e) => e.id === planId)
+    if (!entry) return res.status(404).json({ error: 'Plan not found' })
+    return res.json({ plan: entry.plan, userName: entry.userName, planName: entry.planName, savedAt: entry.savedAt })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ── Delete a plan from history ────────────────────────────────────────────────
+app.post('/api/history/delete', async (req: Request, res: Response) => {
+  const { activationCode, planId } = req.body as { activationCode?: string; planId?: number }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  if (!planId) return res.status(400).json({ error: 'No planId' })
+
+  try {
+    let history = await getHistory(code)
+    const before = history.length
+    history = history.filter((e) => e.id !== planId)
+    if (history.length === before) return res.status(404).json({ error: 'Plan not found' })
+    await redisCommand('SET', 'fuelplan:history:' + code, JSON.stringify(history))
+    return res.json({ ok: true, remaining: history.length })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ── View archived plans (metadata only) ──────────────────────────────────────
+app.post('/api/history/archive', async (req: Request, res: Response) => {
+  const { activationCode } = req.body as { activationCode?: string }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  try {
+    const raw = await redisCommand('GET', 'fuelplan:archive:' + code)
+    const archive: ArchiveEntry[] = raw ? JSON.parse(raw) : []
+    return res.json({ archive })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ── User tracking data (calendar, weights, notes, water goal) ────────────────
+app.post('/api/tracking/save', async (req: Request, res: Response) => {
+  const { activationCode, data } = req.body as { activationCode?: string; data?: TrackingData }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!rateLimit('tracking:save:' + code, 30, 60000)) return res.status(429).json({ error: 'Too many requests' })
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'No data' })
+
+  try {
+    const existing = await getTrackingData(code)
+    const merged = mergeTrackingData(existing, data)
+    await redisCommand('SET', 'fuelplan:tracking:' + code, JSON.stringify(merged))
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/tracking/get', async (req: Request, res: Response) => {
+  const { activationCode } = req.body as { activationCode?: string }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!rateLimit('tracking:get:' + code, 10, 60000)) return res.status(429).json({ error: 'Too many requests' })
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+
+  try {
+    const data = await getTrackingData(code)
+    return res.json({ data })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+async function getTrackingData(code: string): Promise<TrackingData> {
+  const raw = await redisCommand('GET', 'fuelplan:tracking:' + code)
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
+function mergeTrackingData(existing: TrackingData, incoming: TrackingData): TrackingData {
+  const merged: TrackingData = { ...existing }
+
+  // calendarLog: union all date keys — incoming overwrites existing for same date
+  if (incoming.calendarLog && typeof incoming.calendarLog === 'object') {
+    merged.calendarLog = { ...(existing.calendarLog || {}), ...incoming.calendarLog }
+  }
+
+  // weights: merge by date — local (incoming) wins on conflict
+  if (Array.isArray(incoming.weights)) {
+    const existingByDate: Record<string, { date: string; [key: string]: unknown }> = {}
+    ;(existing.weights || []).forEach((w) => {
+      existingByDate[w.date] = w
+    })
+    incoming.weights.forEach((w) => {
+      existingByDate[w.date] = w
+    }) // incoming overwrites
+    merged.weights = Object.values(existingByDate)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 365)
+  }
+
+  // dayNotes: union — incoming overwrites existing for same key
+  if (incoming.dayNotes && typeof incoming.dayNotes === 'object') {
+    merged.dayNotes = { ...(existing.dayNotes || {}), ...incoming.dayNotes }
+  }
+
+  // waterGoal: incoming wins
+  if (typeof incoming.waterGoal === 'number') {
+    merged.waterGoal = incoming.waterGoal
+  }
+
+  merged.updatedAt = new Date().toISOString()
+  return merged
+}
+
+// ── Data export — dumps all user data as JSON ─────────────────────────────────
+app.post('/api/export', async (req: Request, res: Response) => {
+  const { activationCode } = req.body as { activationCode?: string }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+
+  try {
+    const [trackingRaw, historyRaw] = await Promise.all([
+      redisCommand('GET', 'fuelplan:tracking:' + code),
+      redisCommand('GET', 'fuelplan:history:' + code),
+    ])
+    const tracking = trackingRaw ? JSON.parse(trackingRaw) : {}
+    const history = historyRaw ? JSON.parse(historyRaw) : []
+    const remaining = await redisCommand('GET', 'fuelplan:remaining:' + code)
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      activationCode: code,
+      plansRemaining: remaining !== null ? parseInt(remaining) : null,
+      savedPlans: history,
+      tracking,
+    }
+    res.setHeader('Content-Disposition', 'attachment; filename="fuelplan-export.json"')
+    res.setHeader('Content-Type', 'application/json')
+    return res.json(exportData)
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ── Web Push endpoints ────────────────────────────────────────────────────────
+// Returns public VAPID key so frontend can subscribe
+app.get('/api/push/vapid-key', (req: Request, res: Response) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY })
+})
+
+// Save a push subscription for a user code
+app.post('/api/push/subscribe', async (req: Request, res: Response) => {
+  const { activationCode, subscription } = req.body as { activationCode?: string; subscription?: PushSubscription }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  if (!subscription || !subscription.endpoint) return res.status(400).json({ error: 'No subscription' })
+
+  try {
+    // Store subscription (up to 3 devices per code)
+    const existing = await getPushSubscriptions(code)
+    const filtered = existing.filter((s) => s.endpoint !== subscription.endpoint)
+    filtered.unshift(subscription)
+    await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(filtered.slice(0, 3)))
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// Remove push subscription
+app.post('/api/push/unsubscribe', async (req: Request, res: Response) => {
+  const { activationCode, endpoint } = req.body as { activationCode?: string; endpoint?: string }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+
+  try {
+    const existing = await getPushSubscriptions(code)
+    const filtered = existing.filter((s) => s.endpoint !== endpoint)
+    await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(filtered))
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// Send a test push notification
+app.post('/api/push/test', async (req: Request, res: Response) => {
+  const { activationCode } = req.body as { activationCode?: string }
+  if (!activationCode) return res.status(401).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  if (!VAPID_PRIVATE_KEY) return res.status(503).json({ error: 'Push not configured' })
+
+  const subs = await getPushSubscriptions(code)
+  if (!subs.length) return res.status(404).json({ error: 'No subscriptions found' })
+
+  const payload = JSON.stringify({
+    title: 'Fuelplan 🌿',
+    body: 'Push notifications are working! Check your plan.',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: 'fuelplan-test',
+  })
+
+  let sent = 0
+  const staleEndpoints: string[] = []
+  await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        await webPush.sendNotification(sub as any, payload)
+        sent++
+      } catch (err) {
+        const statusCode = (err as any).statusCode
+        if (statusCode === 410 || statusCode === 404) {
+          staleEndpoints.push(sub.endpoint)
+        }
+      }
+    })
+  )
+
+  // Clean up stale subscriptions
+  if (staleEndpoints.length) {
+    const fresh = subs.filter((s) => !staleEndpoints.includes(s.endpoint))
+    await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(fresh))
+  }
+
+  return res.json({ ok: true, sent, total: subs.length })
+})
+
+async function getPushSubscriptions(code: string): Promise<PushSubscription[]> {
+  const raw = await redisCommand('GET', 'fuelplan:push:' + code)
+  if (!raw) return []
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
+}
+
+// ── Register new code (pre-checkout, 0 credits) ───────────────────────────────
+// Called before Lemon Squeezy checkout so the code exists in Redis on return.
+// Safe to call multiple times — no-op if code already exists.
+app.post('/api/register-code', async (req: Request, res: Response) => {
+  const { activationCode } = req.body as { activationCode?: string }
+  if (!activationCode) return res.status(400).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!code || code.length < 4) return res.status(400).json({ error: 'Invalid code format' })
+  try {
+    const exists = await codeExists(code)
+    if (!exists) {
+      await addCode(code)
+      await redisCommand('SET', 'fuelplan:remaining:' + code, 0)
+      console.log('Registered new code (pre-checkout):', code)
+    }
+    res.json({ ok: true, isNew: !exists })
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ── Usage check ───────────────────────────────────────────────────────────────
+app.post('/api/usage', async (req: Request, res: Response) => {
+  const { activationCode } = req.body as { activationCode?: string }
+  if (!activationCode) return res.status(400).json({ error: 'No code' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+
+  let remaining = await getRemaining(code)
+  if (remaining === null) {
+    remaining = parseInt(process.env.DEFAULT_PLAN_LIMIT || '') || 10
+  }
+  return res.json({ remaining })
+})
+
+// ── Admin: all codes with stats ───────────────────────────────────────────────
+app.post('/api/admin/codes', requireAdmin, async (req: Request, res: Response) => {
+  const codes = await getAllCodes()
+  const results = await Promise.all(
+    codes.map(async (code) => {
+      const remaining = await getRemaining(code)
+      const history = await getHistory(code)
+      const note = (await redisCommand('GET', 'fuelplan:note:' + code)) || ''
+      const last = history[0] || null
+      return {
+        code,
+        remaining: remaining ?? 0,
+        plansUsed: history.length,
+        plansSaved: history.length,
+        lastUsed: last ? last.savedAt : null,
+        lastUser: last ? last.userName : null,
+        lastPlanName: last ? last.planName : null,
+        note,
+        plans: history.map((h) => ({ id: h.id, planName: h.planName, savedAt: h.savedAt, userName: h.userName, macros: h.macros })),
+      }
+    })
+  )
+  return res.json({ codes: results })
+})
+
+// ── Admin: stats overview ─────────────────────────────────────────────────────
+app.post('/api/admin/stats', requireAdmin, async (req: Request, res: Response) => {
+  const codes = await getAllCodes()
+  let totalPlansGenerated = 0
+  let activeCodes = 0
+  let codesNearLimit = 0
+  const activity: { code: string; savedAt: string; userName: string; planName: string; macros: Macros }[] = []
+
+  await Promise.all(
+    codes.map(async (code) => {
+      const remaining = await getRemaining(code)
+      const history = await getHistory(code)
+      totalPlansGenerated += history.length
+      if (history.length > 0) activeCodes++
+      if (remaining !== null && remaining <= 2 && remaining > 0) codesNearLimit++
+      history.forEach((h) => activity.push({ code, savedAt: h.savedAt, userName: h.userName, planName: h.planName, macros: h.macros }))
+    })
+  )
+
+  activity.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
+
+  return res.json({
+    totalCodes: codes.length,
+    activeCodes,
+    totalPlansGenerated,
+    codesNearLimit,
+    recentActivity: activity.slice(0, 10),
+  })
+})
+
+// ── Admin: create code (fully in Redis — no env var needed) ──────────────────
+app.post('/api/admin/create-code', requireAdmin, async (req: Request, res: Response) => {
+  const { code, plans } = req.body as { code?: string; plans?: number | string }
+  if (!code) return res.status(400).json({ error: 'code required' })
+  const c = code.trim().toUpperCase()
+  const planCount = parseInt(String(plans)) || parseInt(process.env.DEFAULT_PLAN_LIMIT || '') || 10
+
+  await addCode(c)
+  await setRemaining(c, planCount)
+
+  return res.json({ ok: true, code: c, plans: planCount })
+})
+
+// ── Admin: set remaining ──────────────────────────────────────────────────────
+app.post('/api/admin/set-remaining', requireAdmin, async (req: Request, res: Response) => {
+  const { code, amount } = req.body as { code?: string; amount?: number | string }
+  if (!code || amount === undefined) return res.status(400).json({ error: 'code and amount required' })
+  const c = code.trim().toUpperCase()
+  await setRemaining(c, parseInt(String(amount)))
+  return res.json({ ok: true, code: c, remaining: parseInt(String(amount)) })
+})
+
+// ── Admin: revoke code (removes from Redis set entirely) ─────────────────────
+app.post('/api/admin/revoke-code', requireAdmin, async (req: Request, res: Response) => {
+  const { code } = req.body as { code?: string }
+  if (!code) return res.status(400).json({ error: 'code required' })
+  const c = code.trim().toUpperCase()
+  await removeCode(c)
+  await setRemaining(c, 0)
+  return res.json({ ok: true, code: c })
+})
+
+// ── Admin: history for a code ─────────────────────────────────────────────────
+app.post('/api/admin/history', requireAdmin, async (req: Request, res: Response) => {
+  const { code } = req.body as { code?: string }
+  if (!code) return res.status(400).json({ error: 'code required' })
+  const history = await getHistory(code.trim().toUpperCase())
+  return res.json({ history })
+})
+
+// ── Suggestion proxy (meal swap, etc.) — validates code but does NOT decrement ─
+app.post('/api/claude/suggest', async (req: Request, res: Response) => {
+  const { activationCode, ...payload } = req.body as ClaudeProxyBody
+  if (!activationCode) return res.status(401).json({ error: 'No activation code provided' })
+  const code = activationCode.trim().toUpperCase()
+  const valid = await validateCode(code)
+  if (!valid) return res.status(403).json({ error: 'Invalid activation code' })
+  // Cap tokens to prevent abuse
+  if (typeof payload.max_tokens === 'number' && payload.max_tokens > 1200) payload.max_tokens = 1200
+  if (payload.messages) payload.messages = sanitizeUserContent(payload.messages) as ClaudeMessage[]
+  try {
+    const response = await axios.post('https://api.anthropic.com/v1/messages', payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      timeout: 30000,
+    })
+    return res.status(response.status).json(response.data)
+  } catch (err) {
+    const isTimeout = (err as any).code === 'ECONNABORTED' || (err as Error).message.includes('timeout')
+    if (isTimeout) return res.status(504).json({ error: 'Request timed out — please try again.' })
+    return res.status(500).json({ error: 'Claude API error — please try again.' })
+  }
+})
+
+// ── Email recovery ────────────────────────────────────────────────────────────
+// Link an email address to an activation code (hashed for privacy)
+app.post('/api/account/link-email', async (req: Request, res: Response) => {
+  const { activationCode, email } = req.body as { activationCode?: string; email?: string }
+  if (!activationCode || !email) return res.status(400).json({ error: 'code and email required' })
+  const code = activationCode.trim().toUpperCase()
+  if (!(await validateCode(code))) return res.status(403).json({ error: 'Invalid code' })
+  const emailClean = email.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean)) return res.status(400).json({ error: 'Invalid email' })
+  const emailHash = crypto.createHash('sha256').update(emailClean).digest('hex')
+  try {
+    await redisCommand('SET', 'fuelplan:email:' + emailHash, code)
+    await redisCommand('SET', 'fuelplan:email_of:' + code, emailHash)
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// Send recovery email with activation code
+app.post('/api/account/recover', async (req: Request, res: Response) => {
+  const { email } = req.body as { email?: string }
+  if (!email) return res.status(400).json({ error: 'email required' })
+  const emailClean = email.trim().toLowerCase()
+  if (!rateLimit('recover:' + emailClean, 3, 3600000)) {
+    // Still return ok to not leak whether email exists
+    return res.json({ ok: true })
+  }
+  const emailHash = crypto.createHash('sha256').update(emailClean).digest('hex')
+  try {
+    const code = await redisCommand('GET', 'fuelplan:email:' + emailHash)
+    if (code && process.env.RESEND_API_KEY) {
+      await axios.post(
+        'https://api.resend.com/emails',
+        {
+          from: process.env.FROM_EMAIL || 'Fuelplan <noreply@fuelplan.fit>',
+          to: [emailClean],
+          subject: 'Your Fuelplan access code',
+          html:
+            '<p>Hi — here\'s your Fuelplan activation code: <strong>' +
+            code +
+            '</strong></p>' +
+            '<p>Enter it at <a href="https://fuelplan.fit">fuelplan.fit</a> to access your plan.</p>' +
+            '<p>— The Fuelplan team</p>',
+        },
+        {
+          headers: {
+            Authorization: 'Bearer ' + process.env.RESEND_API_KEY,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+    }
+  } catch (err) {
+    console.error('Email recovery error:', (err as Error).message)
+  }
+  // Always return ok (don't leak whether email was found)
+  return res.json({ ok: true })
+})
+
+// ── Admin: set note for a code ────────────────────────────────────────────────
+app.post('/api/admin/set-note', requireAdmin, async (req: Request, res: Response) => {
+  const { code, note } = req.body as { code?: string; note?: string }
+  if (!code) return res.status(400).json({ error: 'code required' })
+  const c = code.trim().toUpperCase()
+  await redisCommand('SET', 'fuelplan:note:' + c, note || '')
+  return res.json({ ok: true, code: c })
+})
+
+// ── Admin: orders ─────────────────────────────────────────────────────────────
+app.post('/api/admin/orders', requireAdmin, async (req: Request, res: Response) => {
+  const orders = await getAllOrders()
+  const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0)
+  const now = new Date()
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+  const monthRevenue = orders.filter((o) => new Date(o.createdAt).getTime() >= startOfMonth).reduce((s, o) => s + (o.total || 0), 0)
+  return res.json({
+    orders,
+    stats: {
+      totalOrders: orders.length,
+      totalRevenue,
+      monthRevenue,
+      newCodes: orders.filter((o) => o.type === 'new').length,
+      topUps: orders.filter((o) => o.type === 'topup').length,
+    },
+  })
+})
+
+// ── Admin: health check ───────────────────────────────────────────────────────
+app.get('/api/admin/health', requireAdmin, async (req: Request, res: Response) => {
+  const t0 = Date.now()
+  const result = await redisCommand('PING')
+  const responseMs = Date.now() - t0
+  const redisOk = result === 'PONG'
+  return res.json({ redis: redisOk ? 'ok' : 'error', responseMs })
+})
+
+// ── Admin: bulk create codes ──────────────────────────────────────────────────
+app.post('/api/admin/bulk-create', requireAdmin, async (req: Request, res: Response) => {
+  const { prefix, count, plans } = req.body as { prefix?: string; count?: number | string; plans?: number | string }
+  if (!prefix || !count) return res.status(400).json({ error: 'prefix and count required' })
+  const n = Math.min(parseInt(String(count)) || 1, 50)
+  const planCount = parseInt(String(plans)) || parseInt(process.env.DEFAULT_PLAN_LIMIT || '') || 10
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const created: string[] = []
+
+  for (let i = 0; i < n; i++) {
+    let suffix = ''
+    for (let j = 0; j < 6; j++) suffix += chars[Math.floor(Math.random() * chars.length)]
+    const code = (prefix.trim().toUpperCase() + '-' + suffix).slice(0, 20)
+    await addCode(code)
+    await setRemaining(code, planCount)
+    created.push(code)
+  }
+
+  return res.json({ ok: true, created, plans: planCount })
+})
+
+// ── Redis helpers ─────────────────────────────────────────────────────────────
+async function redisCommand(command: string, ...args: (string | number)[]): Promise<any> {
+  const url = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!url || !token) return null
+
+  try {
+    const response = await axios.post(url, [command, ...args], {
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      timeout: 5000,
+    })
+    return response.data.result
+  } catch (err) {
+    console.error('Redis error:', (err as Error).message)
+    return null
+  }
+}
+
+async function getRemaining(code: string): Promise<number | null> {
+  const result = await redisCommand('GET', 'fuelplan:remaining:' + code)
+  if (result === null || result === undefined) return null
+  return parseInt(result, 10)
+}
+
+async function setRemaining(code: string, count: number): Promise<void> {
+  await redisCommand('SET', 'fuelplan:remaining:' + code, count)
+}
+
+// ── Lemon Squeezy Checkout ────────────────────────────────────────────────────
+const LS_VARIANT_MAP: Record<string, string | undefined> = {
+  '5': process.env.LS_VARIANT_5,
+  '10': process.env.LS_VARIANT_10,
+  '20': process.env.LS_VARIANT_20,
+}
+
+app.post('/api/create-checkout', async (req: Request, res: Response) => {
+  const { activationCode, plan } = req.body as { activationCode?: string; plan?: string }
+  const code = (activationCode || '').trim().toUpperCase()
+  const variantId = plan ? LS_VARIANT_MAP[plan] : undefined
+
+  if (!code || !plan) return res.status(400).json({ error: 'Missing code or plan' })
+  if (!variantId) return res.status(400).json({ error: 'Invalid plan' })
+  if (!process.env.LS_API_KEY) return res.status(503).json({ error: 'Payments not configured' })
+
+  // Allow new users (code not yet in system) — webhook creates the code after payment
+  const FRONTEND = 'https://fuelplan.fit'
+
+  try {
+    const response = await axios.post(
+      'https://api.lemonsqueezy.com/v1/checkouts',
+      {
+        data: {
+          type: 'checkouts',
+          attributes: {
+            checkout_data: {
+              custom: { activation_code: code },
+            },
+            product_options: {
+              redirect_url: `${FRONTEND}/?payment=success`,
+              enabled_variants: [parseInt(variantId)],
+            },
+            checkout_options: {
+              button_color: '#c8f542',
+            },
+          },
+          relationships: {
+            store: { data: { type: 'stores', id: process.env.LS_STORE_ID } },
+            variant: { data: { type: 'variants', id: variantId } },
+          },
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.LS_API_KEY}`,
+          Accept: 'application/vnd.api+json',
+          'Content-Type': 'application/vnd.api+json',
+        },
+      }
+    )
+
+    const url = response.data?.data?.attributes?.url
+    if (!url) throw new Error('No checkout URL returned')
+    res.json({ url })
+  } catch (err) {
+    console.error('LS checkout error:', (err as any).response?.data || (err as Error).message)
+    res.status(500).json({ error: 'Failed to create checkout session' })
+  }
+})
+
+async function decrementRemaining(code: string): Promise<void> {
+  await redisCommand('DECR', 'fuelplan:remaining:' + code)
+}
+
+async function getHistory(code: string): Promise<HistoryEntry[]> {
+  const raw = await redisCommand('GET', 'fuelplan:history:' + code)
+  if (!raw) return []
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
+}
+
+async function saveOrderRecord(order: OrderRecord): Promise<void> {
+  const raw = await redisCommand('GET', 'fuelplan:orders')
+  let orders: OrderRecord[] = []
+  try {
+    orders = raw ? JSON.parse(raw) : []
+  } catch {
+    orders = []
+  }
+  orders.unshift(order)
+  if (orders.length > 1000) orders = orders.slice(0, 1000)
+  await redisCommand('SET', 'fuelplan:orders', JSON.stringify(orders))
+}
+
+async function getAllOrders(): Promise<OrderRecord[]> {
+  const raw = await redisCommand('GET', 'fuelplan:orders')
+  try {
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+async function saveToHistory(code: string, entry: HistoryEntry): Promise<void> {
+  let history = await getHistory(code)
+  history.unshift(entry)
+  if (history.length > MAX_HISTORY) {
+    // Auto-archive overflow instead of hard deleting
+    const overflow = history.slice(MAX_HISTORY)
+    history = history.slice(0, MAX_HISTORY)
+    try {
+      const archiveRaw = await redisCommand('GET', 'fuelplan:archive:' + code)
+      let archive: ArchiveEntry[] = archiveRaw ? JSON.parse(archiveRaw) : []
+      // Store only metadata in archive (no full plan JSON — save Redis space)
+      overflow.forEach((e) => archive.unshift({ id: e.id, savedAt: e.savedAt, userName: e.userName, planName: e.planName, macros: e.macros }))
+      archive = archive.slice(0, 50) // keep up to 50 archived plan records
+      await redisCommand('SET', 'fuelplan:archive:' + code, JSON.stringify(archive))
+    } catch (e) {
+      /* non-critical */
+    }
+  }
+  await redisCommand('SET', 'fuelplan:history:' + code, JSON.stringify(history))
+}
+
+// ── Weekly summary push notifications ─────────────────────────────────────────
+async function sendWeeklySummaryNotifications(): Promise<void> {
+  if (!VAPID_PRIVATE_KEY) return
+  console.log('[Weekly] Sending weekly summary push notifications…')
+  try {
+    const codes = await getAllCodes()
+    let totalSent = 0
+    for (const code of codes) {
+      const subs = await getPushSubscriptions(code)
+      if (!subs.length) continue
+      const tracking = await getTrackingData(code)
+      const weights = (tracking.weights || []).slice(0, 7)
+      const latestWeight = weights[0] ? (weights[0] as any).displayVal : null
+      const payload = JSON.stringify({
+        title: 'Fuelplan Weekly',
+        body: latestWeight
+          ? 'New week, new goals! Current weight: ' + latestWeight + '. Open your plan to get started.'
+          : 'New week, new goals! Open Fuelplan to prep your meals.',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: 'fuelplan-weekly',
+        url: '/',
+      })
+      const stale: string[] = []
+      await Promise.all(
+        subs.map(async (sub) => {
+          try {
+            await webPush.sendNotification(sub as any, payload)
+            totalSent++
+          } catch (e) {
+            const statusCode = (e as any).statusCode
+            if (statusCode === 410 || statusCode === 404) stale.push(sub.endpoint)
+          }
+        })
+      )
+      if (stale.length) {
+        const fresh = subs.filter((s) => !stale.includes(s.endpoint))
+        await redisCommand('SET', 'fuelplan:push:' + code, JSON.stringify(fresh))
+      }
+    }
+    console.log('[Weekly] Sent ' + totalSent + ' notifications')
+  } catch (e) {
+    console.error('[Weekly] Error:', (e as Error).message)
+  }
+}
+
+// Admin trigger for weekly summary
+app.post('/api/admin/send-weekly', requireAdmin, async (req: Request, res: Response) => {
+  await sendWeeklySummaryNotifications()
+  res.json({ ok: true })
+})
+
+// Sunday 8pm UTC cron-style check (runs every hour, fires once on Sunday 20:xx)
+const _weeklySentKey = 'fuelplan:weeklySentWeek'
+setInterval(async () => {
+  const now = new Date()
+  if (now.getUTCDay() !== 0 || now.getUTCHours() !== 20) return // Sunday 8pm UTC only
+  try {
+    // Check we haven't sent this week already
+    const weekNum = Math.floor(Date.now() / (7 * 24 * 3600 * 1000))
+    const lastSent = await redisCommand('GET', _weeklySentKey)
+    if (lastSent && parseInt(lastSent) === weekNum) return
+    await redisCommand('SET', _weeklySentKey, String(weekNum))
+    await sendWeeklySummaryNotifications()
+  } catch (e) {
+    console.error('[Weekly cron]', (e as Error).message)
+  }
+}, 3600000) // check every hour
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`Fuelplan backend running on port ${PORT}`)
+})

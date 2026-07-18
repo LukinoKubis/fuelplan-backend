@@ -1,18 +1,33 @@
 # Fuelplan — Backend
 
+> **Rebuild in progress (branch `rebuild/v2`)**: converted to TypeScript as
+> part of the frontend rewrite (see `PLAN.md` in the project root). Source
+> now lives at `src/server.ts`; `dist/` is the gitignored build output.
+> `main` still runs the old plain-JS `server.js` until this is reviewed.
+
 ## What this is
-Express.js API proxy for the Fuelplan PWA.
+Express.js API proxy for the Fuelplan PWA, written in TypeScript.
 Deployed to Railway at https://fuelplan-backend-production.up.railway.app
 
 ## Hosting
 - Platform: Railway (persistent Node.js server, no timeout ceiling)
-- Auto-deploys on push to main branch of this repo
+- Auto-deploys on push to main branch of this repo — Railway's Nixpacks
+  builder auto-detects the `build` script (`tsc`) and runs it before
+  `start` (`node dist/server.js`), no railway.toml needed
 - Deploy takes ~30-60 seconds
 - Has a cold start delay of 10-20s after inactivity (first request wakes it)
 - Environment variables are set via Railway CLI — never hardcode them
 
 ## Stack
-Node.js, Express, Axios, Upstash Redis (REST API — no persistent connection needed)
+Node.js, Express, TypeScript, Axios, Upstash Redis (REST API — no persistent
+connection needed). Single-file source at `src/server.ts`, same structure as
+the old `server.js` — this codebase was simple/well-organized enough that a
+straight TS port was low-friction, no restructuring needed.
+
+## Local dev
+- `npm run dev` — `tsx watch src/server.ts` (no build step needed for dev)
+- `npm run build` — `tsc` → `dist/server.js`
+- `npm start` — runs the built `dist/server.js` (what Railway/Nixpacks runs)
 
 ## Key endpoints
 POST /api/claude               — validates code, decrements credit, proxies to Anthropic
