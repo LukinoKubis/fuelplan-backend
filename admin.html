@@ -253,7 +253,7 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
     <div class="app-header-row2">
       <div class="app-header-row2-inner" id="tab-nav">
         <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
-        <button class="tab-btn" data-tab="codes" onclick="switchTab('codes')">Codes</button>
+        <button class="tab-btn" data-tab="users" onclick="switchTab('users')">Users</button>
         <button class="tab-btn" data-tab="orders" onclick="switchTab('orders')">Orders</button>
         <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">Activity</button>
         <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
@@ -268,7 +268,7 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-val" id="stat-total-codes" style="color:var(--lime)">—</div>
-          <div class="stat-label">Total Codes</div>
+          <div class="stat-label">Total Users</div>
         </div>
         <div class="stat-card">
           <div class="stat-val" id="stat-plans-generated" style="color:var(--blue)">—</div>
@@ -276,7 +276,7 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
         </div>
         <div class="stat-card">
           <div class="stat-val" id="stat-active-codes" style="color:var(--green)">—</div>
-          <div class="stat-label">Active Codes</div>
+          <div class="stat-label">Active Users</div>
         </div>
         <div class="stat-card">
           <div class="stat-val" id="stat-low-codes" style="color:var(--orange)">—</div>
@@ -326,65 +326,17 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
       </div>
     </div>
 
-    <!-- ══ TAB: CODES ══ -->
-    <div class="tab-section" id="tab-codes">
+    <!-- ══ TAB: USERS ══ -->
+    <div class="tab-section" id="tab-users">
 
-      <!-- Create single code -->
-      <div class="create-card">
-        <div class="create-card-title">New Code</div>
-        <div class="create-row">
-          <div class="field field-grow">
-            <label>Code</label>
-            <input type="text" id="new-code" placeholder="FUEL-XXXX" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()">
-          </div>
-          <div class="field field-sm">
-            <label>Plans</label>
-            <input type="number" id="new-plans" placeholder="10" min="1" max="999" value="10">
-          </div>
-          <button class="btn-create" onclick="createCode()">Create</button>
-        </div>
-        <div class="create-result" id="create-result"></div>
-      </div>
-
-      <!-- Bulk create -->
-      <div class="create-card">
-        <div class="create-card-title">Bulk Create</div>
-        <div class="create-row">
-          <div class="field field-grow">
-            <label>Prefix</label>
-            <input type="text" id="bulk-prefix" placeholder="FUEL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
-          </div>
-          <div class="field field-sm">
-            <label>Count</label>
-            <input type="number" id="bulk-count" placeholder="5" min="1" max="50" value="5">
-          </div>
-          <div class="field field-sm">
-            <label>Plans</label>
-            <input type="number" id="bulk-plans" placeholder="10" min="1" max="999" value="10">
-          </div>
-          <button class="btn-create" onclick="bulkCreate()">Generate</button>
-        </div>
-        <div class="create-result" id="bulk-result"></div>
-        <div id="bulk-codes-list" style="display:none">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:6px">
-            <span style="font-size:12px;color:var(--muted)">Click to copy all codes</span>
-            <button class="btn-export" onclick="exportCSV()" style="font-size:11px;padding:6px 10px">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Export CSV
-            </button>
-          </div>
-          <div class="bulk-result-codes" id="bulk-codes-display" onclick="copyBulkCodes()"></div>
-        </div>
-      </div>
-
-      <!-- Codes list -->
+      <!-- Users list -->
       <div>
         <div class="section-hdr">
-          <span class="section-title">All Codes</span>
+          <span class="section-title">All Users</span>
           <div style="display:flex;gap:8px;align-items:center">
             <div class="search-wrap">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input class="search-input" id="code-search" placeholder="Search codes…" oninput="filterCodes()">
+              <input class="search-input" id="code-search" placeholder="Search emails…" oninput="filterCodes()">
             </div>
             <button class="btn-export" onclick="exportCSV()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -392,7 +344,7 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
             </button>
           </div>
         </div>
-        <div class="codes-list" id="codes-list"><div class="empty">Loading codes…</div></div>
+        <div class="codes-list" id="codes-list"><div class="empty">Loading users…</div></div>
       </div>
     </div>
 
@@ -518,7 +470,7 @@ body { font-family: 'Figtree', sans-serif; background: var(--bg); color: var(--t
 
 <div class="modal-overlay" id="revoke-modal">
   <div class="modal">
-    <div class="modal-title">Revoke Code</div>
+    <div class="modal-title">Revoke User</div>
     <div class="modal-sub" id="revoke-modal-sub"></div>
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal('revoke-modal')">Cancel</button>
@@ -538,7 +490,6 @@ let currentEditRemaining = 0;
 let allCodes = [];
 let allActivity = [];
 let allOrders = [];
-let lastBulkCodes = [];
 let _healthInterval = null;
 let _autoRefreshInterval = null;
 
@@ -641,10 +592,10 @@ async function loadAll() {
 async function loadStats() {
   try {
     const data = await api('/api/admin/stats');
-    document.getElementById('stat-total-codes').textContent = data.totalCodes;
+    document.getElementById('stat-total-codes').textContent = data.totalUsers;
     document.getElementById('stat-plans-generated').textContent = data.totalPlansGenerated;
-    document.getElementById('stat-active-codes').textContent = data.activeCodes;
-    document.getElementById('stat-low-codes').textContent = data.codesNearLimit;
+    document.getElementById('stat-active-codes').textContent = data.activeUsers;
+    document.getElementById('stat-low-codes').textContent = data.usersNearLimit;
     document.getElementById('stat-plans-saved').textContent = data.totalPlansGenerated; // proxy
     allActivity = data.recentActivity || [];
     renderOverviewActivity(allActivity);
@@ -655,26 +606,26 @@ async function loadStats() {
 
 async function loadCodes() {
   try {
-    const data = await api('/api/admin/codes');
-    allCodes = data.codes || [];
+    const data = await api('/api/admin/users');
+    allCodes = data.users || [];
     renderCodes(allCodes);
     renderActivityTabFilters();
   } catch(err) {
-    document.getElementById('codes-list').innerHTML = '<div class="empty">Failed to load codes</div>';
+    document.getElementById('codes-list').innerHTML = '<div class="empty">Failed to load users</div>';
   }
 }
 
-// ── RENDER CODES ──────────────────────────────────────────────────────────────
+// ── RENDER USERS ──────────────────────────────────────────────────────────────
 function filterCodes() {
   const q = (document.getElementById('code-search')?.value || '').toLowerCase();
-  const filtered = q ? allCodes.filter(c => c.code.toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q)) : allCodes;
+  const filtered = q ? allCodes.filter(c => c.email.toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q)) : allCodes;
   renderCodes(filtered);
 }
 
-function renderCodes(codes) {
+function renderCodes(users) {
   const el = document.getElementById('codes-list');
-  if (!codes.length) { el.innerHTML = '<div class="empty">No codes found</div>'; return; }
-  el.innerHTML = codes.map(c => {
+  if (!users.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
+  el.innerHTML = users.map(c => {
     const rem = typeof c.remaining === 'number' ? c.remaining : null;
     const dotColor = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem <= 3 ? 'var(--orange)' : 'var(--green)';
     const remColor = rem === null ? 'var(--muted)' : rem <= 0 ? 'var(--red)' : rem <= 3 ? 'var(--orange)' : 'var(--lime)';
@@ -686,11 +637,11 @@ function renderCodes(codes) {
         <span style="color:var(--muted);margin-left:8px">${p.savedAt ? new Date(p.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : ''}</span>
       </div>`).join('') || '<div style="color:var(--muted);font-size:12px">No plans saved yet</div>';
 
-    return `<div class="code-card" id="cc-${escHtml(c.code)}">
-      <div class="code-card-top" onclick="toggleCodeExpand('${escHtml(c.code)}')">
+    return `<div class="code-card" id="cc-${escHtml(c.email)}">
+      <div class="code-card-top" onclick="toggleCodeExpand('${escHtml(c.email)}')">
         <div class="code-status-dot" style="background:${dotColor}"></div>
         <div class="code-info">
-          <div class="code-name">${escHtml(c.code)}</div>
+          <div class="code-name">${escHtml(c.email)}</div>
           <div class="code-meta">${c.plansUsed || 0} generated · Last: ${lastUsedStr}${c.lastUser ? ' · ' + escHtml(c.lastUser) : ''}</div>
           ${c.note ? `<div class="code-note-text">${escHtml(c.note)}</div>` : ''}
         </div>
@@ -699,32 +650,32 @@ function renderCodes(codes) {
           <div class="code-rem-lbl">left</div>
         </div>
         <div class="code-btns" onclick="event.stopPropagation()">
-          <button class="btn-icon lime" onclick="openTopUp('${escHtml(c.code)}',${rem ?? 0})" title="Top up">
+          <button class="btn-icon lime" onclick="openTopUp('${escHtml(c.email)}',${rem ?? 0})" title="Top up">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <button class="btn-icon blue" onclick="openEdit('${escHtml(c.code)}',${rem ?? 0})" title="Set plans">
+          <button class="btn-icon blue" onclick="openEdit('${escHtml(c.email)}',${rem ?? 0})" title="Set plans">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          <button class="btn-icon red" onclick="openRevoke('${escHtml(c.code)}')" title="Revoke">
+          <button class="btn-icon red" onclick="openRevoke('${escHtml(c.email)}')" title="Revoke">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
           </button>
         </div>
       </div>
-      <div class="code-expand" id="cexp-${escHtml(c.code)}">
+      <div class="code-expand" id="cexp-${escHtml(c.email)}">
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;font-weight:700">Saved Plans (${(c.plans||[]).length})</div>
         <div class="code-expand-plans">${plansList}</div>
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;font-weight:700;margin-top:10px">Note</div>
         <div class="code-note-wrap">
-          <input class="code-note-input" id="note-input-${escHtml(c.code)}" type="text" placeholder="e.g. John Smith · 10 pack March" value="${escHtml(c.note || '')}">
-          <button class="btn-save-note" onclick="saveNote('${escHtml(c.code)}')">Save</button>
+          <input class="code-note-input" id="note-input-${escHtml(c.email)}" type="text" placeholder="e.g. VIP customer" value="${escHtml(c.note || '')}">
+          <button class="btn-save-note" onclick="saveNote('${escHtml(c.email)}')">Save</button>
         </div>
       </div>
     </div>`;
   }).join('');
 }
 
-function toggleCodeExpand(code) {
-  const el = document.getElementById('cexp-' + code);
+function toggleCodeExpand(email) {
+  const el = document.getElementById('cexp-' + email);
   if (el) el.classList.toggle('open');
 }
 
@@ -741,7 +692,7 @@ function renderOverviewActivity(activity) {
     return `<div class="activity-item">
       <div class="activity-dot"></div>
       <div class="activity-text">
-        <span class="activity-code">${escHtml(a.code)}</span>${a.userName ? ' · ' + escHtml(a.userName) : ''}
+        <span class="activity-code">${escHtml(a.email)}</span>${a.userName ? ' · ' + escHtml(a.userName) : ''}
         ${a.planName ? ' · <span class="activity-plan">' + escHtml(a.planName) + '</span>' : ''}
         ${macroStr ? '<div class="activity-macros">' + escHtml(macroStr) + '</div>' : ''}
       </div>
@@ -754,8 +705,8 @@ function renderActivityTabFilters() {
   const codeFilter = document.getElementById('activity-filter-code');
   if (!codeFilter) return;
   const prev = codeFilter.value;
-  codeFilter.innerHTML = '<option value="">All codes</option>' +
-    allCodes.map(c => `<option value="${escHtml(c.code)}"${c.code === prev ? ' selected' : ''}>${escHtml(c.code)}</option>`).join('');
+  codeFilter.innerHTML = '<option value="">All users</option>' +
+    allCodes.map(c => `<option value="${escHtml(c.email)}"${c.email === prev ? ' selected' : ''}>${escHtml(c.email)}</option>`).join('');
 }
 
 function renderActivityTab() {
@@ -765,7 +716,7 @@ function renderActivityTab() {
   const countEl = document.getElementById('activity-tab-count');
 
   let items = allActivity;
-  if (codeFilter) items = items.filter(a => a.code === codeFilter);
+  if (codeFilter) items = items.filter(a => a.email === codeFilter);
   if (rangeDays > 0) {
     const cutoff = Date.now() - rangeDays * 86400000;
     items = items.filter(a => new Date(a.savedAt).getTime() >= cutoff);
@@ -780,7 +731,7 @@ function renderActivityTab() {
     return `<div class="activity-item">
       <div class="activity-dot"></div>
       <div class="activity-text">
-        <span class="activity-code">${escHtml(a.code)}</span>${a.userName ? ' · ' + escHtml(a.userName) : ''}
+        <span class="activity-code">${escHtml(a.email)}</span>${a.userName ? ' · ' + escHtml(a.userName) : ''}
         ${a.planName ? ' · <span class="activity-plan">' + escHtml(a.planName) + '</span>' : ''}
         ${macroStr ? '<div class="activity-macros">' + escHtml(macroStr) + '</div>' : ''}
       </div>
@@ -839,12 +790,12 @@ function renderOrdersTab() {
 
   el.innerHTML = '<div class="order-list">' + items.map(o => {
     const date = new Date(o.createdAt).toLocaleString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
-    const typeLabel = o.type === 'topup' ? 'Top-up' : 'New Code';
+    const typeLabel = o.type === 'topup' ? 'Top-up' : 'New Account';
     const taxStr = o.tax ? ` · tax ${fmt(o.tax, o.currency)}` : '';
     return `<div class="order-card">
       <div class="order-type-badge ${o.type || 'new'}">${escHtml(typeLabel)}</div>
       <div class="order-info">
-        <div class="order-code">${escHtml(o.code)}</div>
+        <div class="order-code">${escHtml(o.email)}</div>
         <div class="order-meta">${escHtml(date)}${taxStr} · ${o.credits || 0} credits · ID: ${escHtml(String(o.id).slice(0,12))}…</div>
       </div>
       <div class="order-amount">
@@ -856,70 +807,22 @@ function renderOrdersTab() {
 }
 
 // ── ACTIONS ───────────────────────────────────────────────────────────────────
-async function createCode() {
-  const code = document.getElementById('new-code').value.trim().toUpperCase();
-  const plans = parseInt(document.getElementById('new-plans').value) || 10;
-  const res = document.getElementById('create-result');
-  if (!code) { res.className='create-result err'; res.textContent='Enter a code name'; return; }
-  const btn = document.querySelector('.btn-create');
-  btn.disabled=true; btn.textContent='Creating…';
+async function saveNote(email) {
+  const note = document.getElementById('note-input-' + email)?.value || '';
   try {
-    const data = await api('/api/admin/create-code', { code, plans });
-    res.className='create-result ok';
-    res.innerHTML = `<strong>${data.code}</strong> created with ${data.plans} plans.`;
-    document.getElementById('new-code').value = '';
-    toast('Code created'); await loadCodes(); await loadStats();
-  } catch(err) { res.className='create-result err'; res.textContent=err.message; }
-  finally { btn.disabled=false; btn.textContent='Create'; }
-}
-
-async function bulkCreate() {
-  const prefix = document.getElementById('bulk-prefix').value.trim().toUpperCase();
-  const count = parseInt(document.getElementById('bulk-count').value) || 5;
-  const plans = parseInt(document.getElementById('bulk-plans').value) || 10;
-  const res = document.getElementById('bulk-result');
-  const codesDiv = document.getElementById('bulk-codes-list');
-  if (!prefix) { res.className='create-result err'; res.textContent='Enter a prefix'; return; }
-  const btn = document.querySelectorAll('.btn-create')[1];
-  btn.disabled=true; btn.textContent='Generating…';
-  try {
-    const data = await api('/api/admin/bulk-create', { prefix, count, plans });
-    lastBulkCodes = data.created || [];
-    res.className='create-result ok';
-    res.textContent = `${lastBulkCodes.length} codes created with ${data.plans} plans each.`;
-    document.getElementById('bulk-codes-display').textContent = lastBulkCodes.join('\n');
-    codesDiv.style.display = 'block';
-    toast('Bulk codes created'); await loadCodes(); await loadStats();
-  } catch(err) { res.className='create-result err'; res.textContent=err.message; codesDiv.style.display='none'; }
-  finally { btn.disabled=false; btn.textContent='Generate'; }
-}
-
-function copyBulkCodes() {
-  const text = lastBulkCodes.join('\n');
-  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard')).catch(() => {
-    const el = document.getElementById('bulk-codes-display');
-    const r = document.createRange(); r.selectNode(el);
-    window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
-    toast('Select and copy manually');
-  });
-}
-
-async function saveNote(code) {
-  const note = document.getElementById('note-input-' + code)?.value || '';
-  try {
-    await api('/api/admin/set-note', { code, note });
-    toast('Note saved for ' + code);
+    await api('/api/admin/set-note', { email, note });
+    toast('Note saved for ' + email);
     await loadCodes();
   } catch(err) { toast('Failed: ' + err.message); }
 }
 
 function exportCSV() {
-  const codes = allCodes;
-  if (!codes.length) { toast('No codes to export'); return; }
-  const rows = [['Code','Remaining','PlansUsed','LastActive','LastUser','Note']];
-  codes.forEach(c => {
+  const users = allCodes;
+  if (!users.length) { toast('No users to export'); return; }
+  const rows = [['Email','Remaining','PlansUsed','LastActive','LastUser','Note']];
+  users.forEach(c => {
     rows.push([
-      c.code, c.remaining ?? '', c.plansUsed || 0,
+      c.email, c.remaining ?? '', c.plansUsed || 0,
       c.lastUsed ? new Date(c.lastUsed).toLocaleDateString('en-GB') : '',
       c.lastUser || '', (c.note || '').replace(/,/g, ';')
     ]);
@@ -927,15 +830,15 @@ function exportCSV() {
   const csv = rows.map(r => r.join(',')).join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = 'fuelplan-codes-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.download = 'fuelplan-users-' + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
   toast('CSV downloaded');
 }
 
 // Edit / Top Up / Revoke
-function openEdit(code, remaining) {
-  currentEditCode=code; currentEditRemaining=remaining;
-  document.getElementById('edit-modal-sub').textContent = 'Set exact remaining plans for ' + code;
+function openEdit(email, remaining) {
+  currentEditCode=email; currentEditRemaining=remaining;
+  document.getElementById('edit-modal-sub').textContent = 'Set exact remaining plans for ' + email;
   document.getElementById('edit-amount').value = remaining;
   openModal('edit-modal');
   setTimeout(()=>document.getElementById('edit-amount').focus(), 300);
@@ -943,12 +846,12 @@ function openEdit(code, remaining) {
 async function confirmEdit() {
   const amount = parseInt(document.getElementById('edit-amount').value);
   if (isNaN(amount)||amount<0) { toast('Enter valid number'); return; }
-  try { await api('/api/admin/set-remaining',{code:currentEditCode,amount}); closeModal('edit-modal'); toast(currentEditCode+' → '+amount+' plans'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
+  try { await api('/api/admin/set-remaining',{email:currentEditCode,amount}); closeModal('edit-modal'); toast(currentEditCode+' → '+amount+' plans'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
 }
 
-function openTopUp(code, remaining) {
-  currentEditCode=code; currentEditRemaining=remaining;
-  document.getElementById('topup-modal-sub').textContent = code+' has '+remaining+' plans. Add:';
+function openTopUp(email, remaining) {
+  currentEditCode=email; currentEditRemaining=remaining;
+  document.getElementById('topup-modal-sub').textContent = email+' has '+remaining+' plans. Add:';
   document.getElementById('topup-amount').value='10';
   openModal('topup-modal');
   setTimeout(()=>document.getElementById('topup-amount').focus(), 300);
@@ -957,16 +860,16 @@ async function confirmTopUp() {
   const add = parseInt(document.getElementById('topup-amount').value);
   if (isNaN(add)||add<1) { toast('Enter valid number'); return; }
   const newTotal = currentEditRemaining + add;
-  try { await api('/api/admin/set-remaining',{code:currentEditCode,amount:newTotal}); closeModal('topup-modal'); toast(currentEditCode+' topped up to '+newTotal+' plans'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
+  try { await api('/api/admin/set-remaining',{email:currentEditCode,amount:newTotal}); closeModal('topup-modal'); toast(currentEditCode+' topped up to '+newTotal+' plans'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
 }
 
-function openRevoke(code) {
-  currentEditCode=code;
-  document.getElementById('revoke-modal-sub').textContent = 'Fully delete '+code+'? It stops working immediately.';
+function openRevoke(email) {
+  currentEditCode=email;
+  document.getElementById('revoke-modal-sub').textContent = 'Revoke access for '+email+'? It stops working immediately.';
   openModal('revoke-modal');
 }
 async function confirmRevoke() {
-  try { await api('/api/admin/revoke-code',{code:currentEditCode}); closeModal('revoke-modal'); toast(currentEditCode+' revoked'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
+  try { await api('/api/admin/revoke-user',{email:currentEditCode}); closeModal('revoke-modal'); toast(currentEditCode+' revoked'); await loadCodes(); await loadStats(); } catch(err) { toast(err.message); }
 }
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
