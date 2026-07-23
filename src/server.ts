@@ -5,7 +5,7 @@ import path from 'path'
 import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import webPush from 'web-push'
+import { Expo, type ExpoPushMessage, type ExpoPushToken } from 'expo-server-sdk'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -57,11 +57,9 @@ interface OrderRecord {
   type: 'new' | 'topup' | null
 }
 
-interface PushSubscription {
-  endpoint: string
-  keys?: { p256dh: string; auth: string }
-  [key: string]: unknown
-}
+// Just the Expo push token string now (e.g. "ExponentPushToken[xxxx]"),
+// not a full browser PushSubscription object — native push tokens are
+// already opaque, self-contained identifiers.
 
 interface TrackingData {
   calendarLog?: Record<string, unknown>
@@ -79,20 +77,13 @@ interface UserRecord {
   createdAt: string
 }
 
-// ── Web Push / VAPID setup ────────────────────────────────────────────────────
-const VAPID_PUBLIC_KEY =
-  process.env.VAPID_PUBLIC_KEY ||
-  'BJ8LlwEHVKVb0pKlZLXVw1-rlu8rQvQ4sYccKjTlGssQRjq_xBA9lOoziy3XOk9tnugGVl0zjjpols2Xu8nnloQ'
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY
-const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:support@fuelplan.fit'
-
-if (VAPID_PRIVATE_KEY) {
-  try {
-    webPush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
-  } catch (e) {
-    console.error('VAPID setup failed:', (e as Error).message)
-  }
-}
+// ── Expo Push setup ───────────────────────────────────────────────────────────
+// EXPO_ACCESS_TOKEN is optional (only needed for enhanced push security —
+// see https://docs.expo.dev/push-notifications/sending-notifications/#additional-security)
+// but Android delivery requires FCM v1 credentials to be uploaded to EAS
+// separately (`eas credentials`) — that's project-level config, not
+// something this backend reads directly.
+const expo = new Expo({ accessToken: process.env.EXPO_ACCESS_TOKEN })
 
 // ── Simple in-memory rate limiter ────────────────────────────────────────────
 const _rateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -657,23 +648,19 @@ app.post('/api/export', requireAuth, async (req: AuthedRequest, res: Response) =
   }
 })
 
-// ── Web Push endpoints ────────────────────────────────────────────────────────
-// Returns public VAPID key so frontend can subscribe
-app.get('/api/push/vapid-key', (req: Request, res: Response) => {
-  res.json({ publicKey: VAPID_PUBLIC_KEY })
-})
-
-// Save a push subscription for a user
+// ── Expo Push endpoints ────────────────────────────────────────────────────────
+// Save a push token for a user (registered client-side via
+// expo-notifications' getExpoPushTokenAsync())
 app.post('/api/push/subscribe', requireAuth, async (req: AuthedRequest, res: Response) => {
   const userId = req.userId!
-  const { subscription } = req.body as { subscription?: PushSubscription }
-  if (!subscription || !subscription.endpoint) return res.status(400).json({ error: 'No subscription' })
+  const { token } = req.body as { token?: string }
+  if (!token || !Expo.isExpoPushToken(token)) return res.status(400).json({ error: 'Invalid or missing push token' })
 
   try {
-    // Store subscription (up to 3 devices per user)
-    const existing = await getPushSubscriptions(userId)
-    const filtered = existing.filter((s) => s.endpoint !== subscription.endpoint)
-    filtered.unshift(subscription)
+    // Store token (up to 3 devices per user)
+    const existing = await getPushTokens(userId)
+    const filtered = existing.filter((t) => t !== token)
+    filtered.unshift(token)
     await redisCommand('SET', 'fuelplan:push:' + userId, JSON.stringify(filtered.slice(0, 3)))
     return res.json({ ok: true })
   } catch (err) {
@@ -681,14 +668,14 @@ app.post('/api/push/subscribe', requireAuth, async (req: AuthedRequest, res: Res
   }
 })
 
-// Remove push subscription
+// Remove push token
 app.post('/api/push/unsubscribe', requireAuth, async (req: AuthedRequest, res: Response) => {
   const userId = req.userId!
-  const { endpoint } = req.body as { endpoint?: string }
+  const { token } = req.body as { token?: string }
 
   try {
-    const existing = await getPushSubscriptions(userId)
-    const filtered = existing.filter((s) => s.endpoint !== endpoint)
+    const existing = await getPushTokens(userId)
+    const filtered = existing.filter((t) => t !== token)
     await redisCommand('SET', 'fuelplan:push:' + userId, JSON.stringify(filtered))
     return res.json({ ok: true })
   } catch (err) {
@@ -699,45 +686,23 @@ app.post('/api/push/unsubscribe', requireAuth, async (req: AuthedRequest, res: R
 // Send a test push notification
 app.post('/api/push/test', requireAuth, async (req: AuthedRequest, res: Response) => {
   const userId = req.userId!
-  if (!VAPID_PRIVATE_KEY) return res.status(503).json({ error: 'Push not configured' })
+  const tokens = await getPushTokens(userId)
+  if (!tokens.length) return res.status(404).json({ error: 'No push tokens registered' })
 
-  const subs = await getPushSubscriptions(userId)
-  if (!subs.length) return res.status(404).json({ error: 'No subscriptions found' })
-
-  const payload = JSON.stringify({
+  const { sent, stale } = await sendExpoPush(tokens, {
     title: 'Fuelplan 🌿',
     body: 'Push notifications are working! Check your plan.',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    tag: 'fuelplan-test',
   })
 
-  let sent = 0
-  const staleEndpoints: string[] = []
-  await Promise.all(
-    subs.map(async (sub) => {
-      try {
-        await webPush.sendNotification(sub as any, payload)
-        sent++
-      } catch (err) {
-        const statusCode = (err as any).statusCode
-        if (statusCode === 410 || statusCode === 404) {
-          staleEndpoints.push(sub.endpoint)
-        }
-      }
-    })
-  )
-
-  // Clean up stale subscriptions
-  if (staleEndpoints.length) {
-    const fresh = subs.filter((s) => !staleEndpoints.includes(s.endpoint))
+  if (stale.length) {
+    const fresh = tokens.filter((t) => !stale.includes(t))
     await redisCommand('SET', 'fuelplan:push:' + userId, JSON.stringify(fresh))
   }
 
-  return res.json({ ok: true, sent, total: subs.length })
+  return res.json({ ok: true, sent, total: tokens.length })
 })
 
-async function getPushSubscriptions(userId: string): Promise<PushSubscription[]> {
+async function getPushTokens(userId: string): Promise<string[]> {
   const raw = await redisCommand('GET', 'fuelplan:push:' + userId)
   if (!raw) return []
   try {
@@ -745,6 +710,63 @@ async function getPushSubscriptions(userId: string): Promise<PushSubscription[]>
   } catch {
     return []
   }
+}
+
+// Sends to every token, chunked per Expo's SDK requirement, and fetches
+// delivery receipts to detect tokens that should be dropped (the
+// DeviceNotRegistered equivalent of the old web-push 410/404 handling —
+// Expo's send-time errors alone don't tell you this, only receipts do).
+async function sendExpoPush(
+  tokens: string[],
+  { title, body }: { title: string; body: string }
+): Promise<{ sent: number; stale: string[] }> {
+  const valid = tokens.filter((t) => Expo.isExpoPushToken(t)) as ExpoPushToken[]
+  if (!valid.length) return { sent: 0, stale: tokens.filter((t) => !Expo.isExpoPushToken(t)) }
+
+  // Chunk tokens and messages together (not just messages) so a ticket can
+  // always be traced back to the token that produced it — chunking
+  // messages alone and relying on positional index alignment breaks the
+  // moment any one chunk's send fails (tickets falls behind valid/token
+  // order for every chunk after it).
+  const tokenChunks: ExpoPushToken[][] = []
+  const messageChunks: ExpoPushMessage[][] = []
+  for (let i = 0; i < valid.length; i += 100) {
+    tokenChunks.push(valid.slice(i, i + 100))
+    messageChunks.push(valid.slice(i, i + 100).map((to) => ({ to, sound: 'default', title, body }) as ExpoPushMessage))
+  }
+
+  const receiptIdToToken = new Map<string, string>()
+  for (let i = 0; i < messageChunks.length; i++) {
+    try {
+      const tickets = await expo.sendPushNotificationsAsync(messageChunks[i])
+      tickets.forEach((ticket, j) => {
+        if (ticket.status === 'ok' && ticket.id) receiptIdToToken.set(ticket.id, tokenChunks[i][j])
+      })
+    } catch (e) {
+      console.error('[push] chunk send failed:', (e as Error).message)
+    }
+  }
+
+  const stale: string[] = []
+  let sent = 0
+  const receiptChunks = expo.chunkPushNotificationReceiptIds([...receiptIdToToken.keys()])
+  for (const chunk of receiptChunks) {
+    try {
+      const receipts = await expo.getPushNotificationReceiptsAsync(chunk)
+      for (const [receiptId, receipt] of Object.entries(receipts)) {
+        if (receipt.status === 'ok') {
+          sent++
+        } else if (receipt.details?.error === 'DeviceNotRegistered') {
+          const token = receiptIdToToken.get(receiptId)
+          if (token) stale.push(token)
+        }
+      }
+    } catch (e) {
+      console.error('[push] receipt fetch failed:', (e as Error).message)
+    }
+  }
+
+  return { sent, stale }
 }
 
 // ── Usage check ───────────────────────────────────────────────────────────────
@@ -1056,41 +1078,25 @@ async function saveToHistory(userId: string, entry: HistoryEntry): Promise<void>
 
 // ── Weekly summary push notifications ─────────────────────────────────────────
 async function sendWeeklySummaryNotifications(): Promise<void> {
-  if (!VAPID_PRIVATE_KEY) return
   console.log('[Weekly] Sending weekly summary push notifications…')
   try {
     const userIds = await getAllUserIds()
     let totalSent = 0
     for (const userId of userIds) {
-      const subs = await getPushSubscriptions(userId)
-      if (!subs.length) continue
+      const tokens = await getPushTokens(userId)
+      if (!tokens.length) continue
       const tracking = await getTrackingData(userId)
       const weights = (tracking.weights || []).slice(0, 7)
       const latestWeight = weights[0] ? (weights[0] as any).displayVal : null
-      const payload = JSON.stringify({
+      const { sent, stale } = await sendExpoPush(tokens, {
         title: 'Fuelplan Weekly',
         body: latestWeight
           ? 'New week, new goals! Current weight: ' + latestWeight + '. Open your plan to get started.'
           : 'New week, new goals! Open Fuelplan to prep your meals.',
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        tag: 'fuelplan-weekly',
-        url: '/',
       })
-      const stale: string[] = []
-      await Promise.all(
-        subs.map(async (sub) => {
-          try {
-            await webPush.sendNotification(sub as any, payload)
-            totalSent++
-          } catch (e) {
-            const statusCode = (e as any).statusCode
-            if (statusCode === 410 || statusCode === 404) stale.push(sub.endpoint)
-          }
-        })
-      )
+      totalSent += sent
       if (stale.length) {
-        const fresh = subs.filter((s) => !stale.includes(s.endpoint))
+        const fresh = tokens.filter((t) => !stale.includes(t))
         await redisCommand('SET', 'fuelplan:push:' + userId, JSON.stringify(fresh))
       }
     }

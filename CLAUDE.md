@@ -91,7 +91,9 @@ fuelplan:remaining:USERID    — remaining generations (integer string)
 fuelplan:history:USERID      — JSON array, max 5 entries, newest first
 fuelplan:archive:USERID      — archived plans, same shape as history
 fuelplan:tracking:USERID     — calendar/weights/notes sync payload
-fuelplan:push:USERID         — web push subscription
+fuelplan:push:USERID         — JSON array of Expo push token strings (up to 3 devices),
+                                 e.g. ["ExponentPushToken[xxxx]", ...] — NOT a browser
+                                 PushSubscription object anymore, see "Push notifications" below
 fuelplan:note:USERID         — admin-set note (shown in admin dashboard)
 fuelplan:orders:*            — LemonSqueezy order records
 
@@ -110,6 +112,37 @@ DEFAULT_PLAN_LIMIT         — how many generations a new account starts with
 FRONTEND_URL               — https://fuelplan.fit (used in CORS allowlist)
 RESEND_API_KEY             — Resend.com API key (free tier: 3000 emails/month), powers forgot-password emails
 FROM_EMAIL                 — sender address, e.g. "Fuelplan <noreply@fuelplan.fit>"
+EXPO_ACCESS_TOKEN          — optional, only for Expo's enhanced push security feature; push
+                              sending works without it. See "Push notifications" below.
+
+## Push notifications
+Swapped from Web Push/VAPID to Expo's push service on 2026-07-24, as part
+of the `fuelplan-mobile` (React Native) migration — the web app's
+`fuelplan-frontend` never used this itself. Uses `expo-server-sdk`
+(`new Expo({ accessToken: process.env.EXPO_ACCESS_TOKEN })`), not
+`web-push` — that package and its VAPID env vars (`VAPID_PUBLIC_KEY`/
+`VAPID_PRIVATE_KEY`/`VAPID_EMAIL`) were removed entirely, not deprecated.
+- `POST /api/push/subscribe` / `/unsubscribe` — body is `{ token }`, an
+  Expo push token string obtained client-side via
+  `expo-notifications`' `getExpoPushTokenAsync()`, validated with
+  `Expo.isExpoPushToken()`. No more `/api/push/vapid-key` endpoint — native
+  push doesn't need a public-key handshake the way browser subscriptions do.
+- `sendExpoPush()` (helper, near the endpoints) chunks tokens+messages
+  together (not messages alone) specifically so a delivery receipt can
+  always be traced back to the token that sent it, even if an earlier
+  chunk's send call fails — chunking only the messages and relying on
+  positional index alignment against the token list breaks the moment any
+  chunk errors out.
+- Stale-token cleanup uses Expo's receipt API (`DeviceNotRegistered`
+  error), the equivalent of the old web-push 410/404 status check —
+  Expo's send-time ticket response alone doesn't surface this, only a
+  follow-up receipt fetch does.
+- **Android delivery needs FCM v1 credentials configured in EAS**
+  (`eas credentials`, requires a Firebase project — this is mobile-app-side
+  setup, not something this backend reads or stores) — sending will
+  silently fail for Android tokens without it. iOS needs an APNs push key,
+  same EAS credentials flow, requires the Apple Developer Program
+  enrollment.
 
 ## Railway CLI — use this instead of the dashboard
 
