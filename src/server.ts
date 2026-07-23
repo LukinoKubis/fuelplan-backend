@@ -463,9 +463,9 @@ app.post('/api/claude', requireAuth, async (req: AuthedRequest, res: Response) =
     const isTimeout = (err as any).code === 'ECONNABORTED' || (err as Error).message.includes('timeout')
     if (isTimeout) return res.status(504).json({ error: 'Request timed out — please try again.' })
     if ((err as any).response?.status === 529 || (err as any).response?.status === 503) {
-      return res.status(503).json({ error: 'Claude API is temporarily overloaded — please try again in a moment.' })
+      return res.status(503).json({ error: 'The AI service is temporarily overloaded — please try again in a moment.' })
     }
-    return res.status(500).json({ error: anthropicMsg || 'Claude API error — please try again.' })
+    return res.status(500).json({ error: anthropicMsg || 'AI service error — please try again.' })
   }
 })
 
@@ -866,7 +866,7 @@ app.post('/api/claude/suggest', requireAuth, async (req: AuthedRequest, res: Res
   } catch (err) {
     const isTimeout = (err as any).code === 'ECONNABORTED' || (err as Error).message.includes('timeout')
     if (isTimeout) return res.status(504).json({ error: 'Request timed out — please try again.' })
-    return res.status(500).json({ error: 'Claude API error — please try again.' })
+    return res.status(500).json({ error: 'AI service error — please try again.' })
   }
 })
 
