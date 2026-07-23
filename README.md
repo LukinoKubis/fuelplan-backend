@@ -1,12 +1,13 @@
 # Fuelplan Backend
 
 Express + TypeScript API that proxies Claude for AI meal/training generation,
-validates activation codes and credits, and stores user data (accounts,
-history, tracking) in Upstash Redis. Deployed to Railway.
+authenticates users (email/password + JWT) and tracks credits, and stores
+user data (accounts, history, tracking) in Upstash Redis. Deployed to
+Railway.
 
-> Currently mid-rebuild on branch `rebuild/v2` (see the root project's
-> `PLAN.md`). This README describes the TypeScript version — `main` has
-> already been merged to it as of the Phase 0/1/2 rebuild.
+> Rebuild complete and live on `main`. See the root project's `PLAN.md` for
+> phase history. Auth was migrated from activation codes to real accounts
+> on 2026-07-19 — see `CLAUDE.md`'s "Auth" section for the current model.
 
 ## Stack
 
@@ -40,8 +41,9 @@ anything useful:
 | Variable | Required for |
 |---|---|
 | `ANTHROPIC_API_KEY` | Meal/plan generation (`/api/claude`) |
-| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Almost everything — activation codes, credits, history, tracking |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Almost everything — accounts, credits, history, tracking |
 | `ADMIN_KEY` | `/admin` dashboard and any `/api/admin/*` route |
+| `JWT_SECRET` | Every auth endpoint (signup/login) and every `requireAuth`-gated route — missing this takes down the whole app, not just auth (see `CLAUDE.md`) |
 
 Everything else (email recovery, push notifications, LemonSqueezy payments)
 degrades gracefully — those endpoints return early or no-op without their
@@ -66,16 +68,27 @@ functions at the bottom. See `CLAUDE.md` for the full endpoint list and
 
 ## Deploying
 
-Railway auto-deploys on push to `main`. Its Nixpacks builder auto-detects
-the `build` script and runs it before `start` — no `railway.toml` needed.
+Railway is *supposed* to auto-deploy on push to `main`, but the GitHub
+webhook has failed silently on this project before (push succeeds, Railway
+just never rebuilds). Always verify after pushing:
 
 ```bash
-git push origin main   # Railway builds + deploys automatically, ~30-60s
-railway logs            # tail logs if something looks wrong
+git push origin main
+railway status --json   # check the deployed commitHash matches your push
 ```
 
+If it doesn't match, force it from your local checkout:
+
+```bash
+railway up --ci -m "description"   # builds + deploys whatever's checked out locally
+```
+
+Plan is Hobby ($5/mo) — the free tier blocks all deploys 8am–8pm
+Europe/Amsterdam, which is worth knowing if a deploy mysteriously refuses to
+start.
+
 If a deploy breaks the backend: `git log --oneline`, `git revert HEAD`,
-`git push origin main` — Railway redeploys the revert within the same window.
+`git push origin main`, then verify/force-deploy as above.
 
 ## More detail
 
