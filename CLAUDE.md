@@ -143,6 +143,23 @@ of the `fuelplan-mobile` (React Native) migration — the web app's
   silently fail for Android tokens without it. iOS needs an APNs push key,
   same EAS credentials flow, requires the Apple Developer Program
   enrollment.
+- **Incident, 2026-07-24**: the `expo-server-sdk` swap took production down
+  immediately (502 on every request) — Railway's Node runtime resolved to
+  18.20.8 (the oldest version satisfying the then-current
+  `engines.node: >=18.0.0`), which doesn't expose `File` as a global the
+  way Node 20+ does; `expo-server-sdk` pulls in `undici`, which crashes at
+  require-time without it. Fixed by `src/polyfills.ts` (a `node:buffer`
+  `File` polyfill, imported first in `server.ts` — **must** be a separate
+  module, not an inline statement above the `expo-server-sdk` import: ES
+  module imports execute in source order on first encounter regardless of
+  textual position relative to non-import statements, so an inline
+  polyfill wouldn't actually run first) and bumping `engines.node` to
+  `>=20.0.0`. Lesson: this dev environment's local Node (24.x) is newer
+  than what Railway actually deploys on — a clean local `npm run build` +
+  run is not sufficient proof a new dependency won't break production;
+  check what Node version Railway is actually resolving
+  (`railway status --json`) before trusting a deploy, especially after
+  adding a new dependency.
 
 ## Railway CLI — use this instead of the dashboard
 
