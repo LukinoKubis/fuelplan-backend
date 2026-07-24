@@ -638,7 +638,8 @@ app.post('/api/recipes/save', requireAuth, async (req: AuthedRequest, res: Respo
       try {
         const url = await uploadRecipePhoto(userId, saved.id, saved.photo)
         saved = await saveRecipeRecord(userId, { ...saved, photo: url })
-      } catch {
+      } catch (photoErr) {
+        console.error('recipe photo upload failed:', photoErr)
         // keep the base64 inline
       }
     }
