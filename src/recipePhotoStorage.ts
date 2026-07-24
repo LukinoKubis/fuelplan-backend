@@ -1,16 +1,30 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import axios from 'axios'
 
 const BUCKET = 'recipe-photos'
 
-let client: SupabaseClient | null | undefined
+interface SupabaseConfig {
+  url: string
+  key: string
+}
 
-/** Lazily created, cached singleton — soft-disabled (returns null) if the env vars aren't set, matching this codebase's pattern for other optional integrations (OPENAI_API_KEY, RESEND_API_KEY). */
-function getClient(): SupabaseClient | null {
-  if (client !== undefined) return client
+/**
+ * Talks to Supabase Storage's REST API directly via axios rather than
+ * `@supabase/supabase-js` — the SDK's `createClient()` unconditionally
+ * constructs a Realtime client, which requires a native `WebSocket` global
+ * only present in Node 22+. Railway resolves Node 20.20.2 for this project
+ * (see package.json's `engines.node`), so every call through the SDK threw
+ * "Node.js detected but native WebSocket not found" at runtime — confirmed
+ * live via a real save-with-photo request that silently fell back to the
+ * base64 path, then a debug log that caught the actual error. Same failure
+ * class as the earlier `expo-server-sdk`/Node-version incident documented
+ * for push notifications. We only need Storage here, not Realtime, so
+ * talking to the REST API directly sidesteps the whole problem instead of
+ * bumping the project's Node version just for this.
+ */
+function getConfig(): SupabaseConfig | null {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  client = url && key ? createClient(url, key) : null
-  return client
+  return url && key ? { url, key } : null
 }
 
 function parseDataUri(dataUri: string): { buffer: Buffer; contentType: string } | null {
@@ -30,30 +44,38 @@ function parseDataUri(dataUri: string): { buffer: Buffer; contentType: string } 
  * object automatically instead of orphaning it. Returns the public URL to
  * store on the record instead of the raw blob. Throws if Supabase isn't
  * configured or the upload fails — the save endpoint catches this and
- * falls back to keeping the base64 inline, so a missing/misconfigured
- * SUPABASE_URL never breaks the cover-photo feature, just leaves it on
- * the old (working, just heavier) storage path.
+ * falls back to keeping the base64 inline.
  */
 export async function uploadRecipePhoto(userId: string, recipeId: number, dataUri: string): Promise<string> {
-  const supabase = getClient()
-  if (!supabase) throw new Error('Supabase not configured')
+  const config = getConfig()
+  if (!config) throw new Error('Supabase not configured')
   const parsed = parseDataUri(dataUri)
   if (!parsed) throw new Error('Invalid photo data')
 
   const ext = parsed.contentType.split('/')[1] || 'jpg'
   const path = `${userId}/${recipeId}.${ext}`
-  const { error } = await supabase.storage.from(BUCKET).upload(path, parsed.buffer, { contentType: parsed.contentType, upsert: true })
-  if (error) throw error
 
-  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
+  await axios.post(`${config.url}/storage/v1/object/${BUCKET}/${path}`, parsed.buffer, {
+    headers: {
+      Authorization: `Bearer ${config.key}`,
+      apikey: config.key,
+      'Content-Type': parsed.contentType,
+      'x-upsert': 'true',
+    },
+  })
+
+  return `${config.url}/storage/v1/object/public/${BUCKET}/${path}`
 }
 
 /** Best-effort cleanup when a recipe is deleted — never throws, storage cleanup isn't critical-path. Tries the extensions recipePhoto.ts actually produces (always JPEG today, PNG kept as a defensive extra). */
 export async function deleteRecipePhoto(userId: string, recipeId: number): Promise<void> {
-  const supabase = getClient()
-  if (!supabase) return
+  const config = getConfig()
+  if (!config) return
   try {
-    await supabase.storage.from(BUCKET).remove([`${userId}/${recipeId}.jpeg`, `${userId}/${recipeId}.jpg`, `${userId}/${recipeId}.png`])
+    await axios.delete(`${config.url}/storage/v1/object/${BUCKET}`, {
+      headers: { Authorization: `Bearer ${config.key}`, apikey: config.key },
+      data: { prefixes: [`${userId}/${recipeId}.jpeg`, `${userId}/${recipeId}.jpg`, `${userId}/${recipeId}.png`] },
+    })
   } catch {
     // best-effort
   }
