@@ -38,12 +38,14 @@ Deployed to Railway at https://fuelplan-backend-production.up.railway.app
 Node.js, Express, TypeScript, Axios, Upstash Redis (REST API — no persistent
 connection needed). Single-file source at `src/server.ts`, same structure as
 the old `server.js` — this codebase was simple/well-organized enough that a
-straight TS port was low-friction, no restructuring needed.
+straight TS port was low-friction, no restructuring needed. `videoExtract.ts`
+(recipe video reading) is the one other source file — see its own section
+below.
 
 ## Local dev
 - `npm run dev` — `tsx watch src/server.ts` (no build step needed for dev)
 - `npm run build` — `tsc` → `dist/server.js`
-- `npm start` — runs the built `dist/server.js` (what Railway/Nixpacks runs)
+- `npm start` — runs the built `dist/server.js` (what Railway runs)
 
 ## Auth
 Real accounts, not activation codes. bcrypt-hashed passwords, JWT (90-day
@@ -167,6 +169,71 @@ of the `fuelplan-mobile` (React Native) migration — the web app's
   check what Node version Railway is actually resolving
   (`railway status --json`) before trusting a deploy, especially after
   adding a new dependency.
+
+## Recipe video reading (`videoExtract.ts`) — real scraping, not an API
+`POST /api/recipes/extract-video` (TikTok only) reads spoken audio and
+on-screen text overlays a video's caption doesn't cover, for the mobile
+app's recipe import. There is no official transcript API for either
+platform — this downloads the actual video and processes it:
+
+- **Getting the video file requires a real headless browser, not a plain
+  fetch.** TikTok's video CDN 403s a bare server-side `fetch()` (Akamai
+  edge, confirmed live — likely blocking datacenter IPs/missing session
+  context regardless of headers), but a real Playwright/Chromium page
+  load succeeds and lets us intercept the actual video response. Every
+  call spins up a full browser — real latency (8-14s end to end) and real
+  CPU/memory cost, not a cheap API hit.
+- **Genuinely flaky, by nature of scraping.** A ~600-byte non-video
+  response can share the exact same `/video/tos/` URL path as the real
+  multi-MB video and arrive first — `downloadTikTokVideo`'s
+  `page.waitForResponse()` predicate checks response *size*, not just URL
+  pattern, specifically because of this. One retry (fresh browser) before
+  giving up. Verified 3/3 reliable after that fix, both locally and
+  against the live Railway deploy.
+- **Audio → text**: ffmpeg-static (bundles its own binary — no system
+  ffmpeg package needed, unlike Chromium) pulls the audio track, sent to
+  OpenAI Whisper (`OPENAI_API_KEY`, a service-account key). Soft-optional:
+  no key configured just means an empty transcript plus a warning, not a
+  thrown error — on-screen text and the caption are still useful without it.
+- **On-screen text → text**: 1 frame every 3s (up to 6, so ~18s of video —
+  a real v1 limitation for longer clips) sent to Claude's vision API,
+  reusing the existing `ANTHROPIC_API_KEY` — no new provider needed for
+  this half.
+- **Instagram is NOT supported.** Its post pages don't expose a directly
+  fetchable video URL the way TikTok's do; doing it reliably would need a
+  logged-in session, a materially bigger lift not attempted. The endpoint
+  rejects non-TikTok URLs outright.
+- Gated by `requireAuth` + a `remaining > 0` check (abuse prevention) but
+  does **not** itself decrement a credit — the recipe-extraction call that
+  follows (through `/api/claude`) already does.
+
+### Railway migrated its default builder from Nixpacks to Railpack
+Discovered the hard way adding this feature: a `nixpacks.toml` with
+Chromium's required apt packages + a custom install command was **silently
+ignored** — confirmed from the actual build log (`[railpack] merge
+$packages:apt:runtime, ...` lines; only Railpack's own auto-detected
+`libatomic1` got installed, nothing from the file). Railway's build system
+is Railpack now, and it doesn't read `nixpacks.toml` — check the build log
+for `[railpack]` vs `[nixpacks]` lines before assuming which one is active,
+rather than trusting a filename that used to work.
+
+What Railpack actually reads:
+- **`postinstall` script in `package.json`** (`playwright install
+  chromium`) — runs automatically via `npm ci`'s lifecycle hooks
+  regardless of which builder Railway uses. More portable than fighting a
+  builder-specific custom-step config format — prefer this over a
+  builder-specific file when a package-manager lifecycle hook can do the
+  same job.
+- **`RAILPACK_DEPLOY_APT_PACKAGES`** (Railway env var, not a committed
+  file) for system packages needed at *runtime* (Chromium launching, not
+  just downloading) — Playwright's documented Debian 12 dependency list
+  for Chromium. Prefixed with `...` so it *extends* Railpack's own
+  auto-detected packages instead of replacing them (omitting `...`
+  replaces the whole list, which would drop packages Railpack needs for
+  its own purposes).
+- There's also a `RAILPACK_BUILD_APT_PACKAGES` (build-time-only packages)
+  and a `railpack.json` config file for more complex cases (custom build
+  steps, etc.) — not needed here since `postinstall` covered it.
 
 ## Railway CLI — use this instead of the dashboard
 
