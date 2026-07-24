@@ -15,6 +15,11 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const PORT = process.env.PORT || 3000
 const MAX_HISTORY = 5
+// Unlike history, recipes are user-curated (not auto-generated), so
+// overflow returns a 400 instead of silently evicting/archiving the
+// oldest one — losing something a user deliberately saved is worse than
+// losing an old auto-generated plan.
+const MAX_RECIPES = 300
 const JWT_SECRET = process.env.JWT_SECRET || ''
 const JWT_EXPIRY = '90d'
 
@@ -42,6 +47,21 @@ interface ArchiveEntry {
   userName: string
   planName: string
   macros: Macros
+}
+
+/** One saved recipe in a user's personal recipe box — imported via the app or saved manually. */
+interface RecipeRecord {
+  id: number
+  name: string
+  ingredients: { name: string; qty: string }[]
+  steps: string[]
+  macros: Macros
+  servings?: number
+  sourceUrl?: string
+  sourceCaption?: string
+  sourcePlatform?: 'instagram' | 'tiktok' | 'manual' | 'other'
+  savedAt: string
+  updatedAt?: string
 }
 
 interface OrderRecord {
@@ -543,6 +563,63 @@ app.post('/api/history/archive', requireAuth, async (req: AuthedRequest, res: Re
     const raw = await redisCommand('GET', 'fuelplan:archive:' + userId)
     const archive: ArchiveEntry[] = raw ? JSON.parse(raw) : []
     return res.json({ archive })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ── Recipe box endpoints ───────────────────────────────────────────────────────
+// Save (or update, if `recipe.id` matches an existing entry) a recipe.
+app.post('/api/recipes/save', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  const { recipe } = req.body as { recipe?: Partial<RecipeRecord> }
+  if (!recipe || !recipe.name) return res.status(400).json({ error: 'No recipe data' })
+
+  const record: RecipeRecord = {
+    id: recipe.id ?? 0,
+    name: recipe.name,
+    ingredients: recipe.ingredients || [],
+    steps: recipe.steps || [],
+    macros: recipe.macros || {},
+    servings: recipe.servings,
+    sourceUrl: recipe.sourceUrl,
+    sourceCaption: recipe.sourceCaption,
+    sourcePlatform: recipe.sourcePlatform,
+    savedAt: recipe.savedAt || new Date().toISOString(),
+  }
+
+  try {
+    const saved = await saveRecipeRecord(userId, record)
+    return res.json({ ok: true, recipe: saved })
+  } catch (err) {
+    return res.status(400).json({ error: (err as Error).message })
+  }
+})
+
+// Lists all of the signed-in user's saved recipes.
+app.post('/api/recipes/list', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  try {
+    const recipes = await getRecipes(userId)
+    return res.json({ recipes })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// Removes a recipe from the user's box.
+app.post('/api/recipes/delete', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  const { recipeId } = req.body as { recipeId?: number }
+  if (!recipeId) return res.status(400).json({ error: 'No recipeId' })
+
+  try {
+    let recipes = await getRecipes(userId)
+    const before = recipes.length
+    recipes = recipes.filter((r) => r.id !== recipeId)
+    if (recipes.length === before) return res.status(404).json({ error: 'Recipe not found' })
+    await redisCommand('SET', 'fuelplan:recipes:' + userId, JSON.stringify(recipes))
+    return res.json({ ok: true, remaining: recipes.length })
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message })
   }
@@ -1054,6 +1131,36 @@ async function getAllOrders(): Promise<OrderRecord[]> {
   } catch {
     return []
   }
+}
+
+async function getRecipes(userId: string): Promise<RecipeRecord[]> {
+  const raw = await redisCommand('GET', 'fuelplan:recipes:' + userId)
+  if (!raw) return []
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Upserts a recipe (replaces in place if `recipe.id` matches an existing
+ * entry, otherwise assigns a new id and unshifts). Throws if the box is
+ * already at MAX_RECIPES and this would add a new entry — callers should
+ * catch and surface that as a 400, not silently drop the save.
+ */
+async function saveRecipeRecord(userId: string, recipe: RecipeRecord): Promise<RecipeRecord> {
+  const recipes = await getRecipes(userId)
+  const existingIndex = recipes.findIndex((r) => r.id === recipe.id)
+  if (existingIndex !== -1) {
+    recipes[existingIndex] = { ...recipe, updatedAt: new Date().toISOString() }
+  } else {
+    if (recipes.length >= MAX_RECIPES) throw new Error('Recipe box is full — delete a recipe to save a new one.')
+    recipe = { ...recipe, id: Date.now(), savedAt: recipe.savedAt || new Date().toISOString() }
+    recipes.unshift(recipe)
+  }
+  await redisCommand('SET', 'fuelplan:recipes:' + userId, JSON.stringify(recipes))
+  return existingIndex !== -1 ? recipes[existingIndex] : recipe
 }
 
 async function saveToHistory(userId: string, entry: HistoryEntry): Promise<void> {

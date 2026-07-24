@@ -77,6 +77,9 @@ POST /api/history/get           — requireAuth, metadata list (id, savedAt, pla
 POST /api/history/restore       — requireAuth, full plan JSON for a given planId
 POST /api/history/delete        — requireAuth, removes a plan from history
 POST /api/history/archive       — requireAuth, archives instead of hard-deleting
+POST /api/recipes/save          — requireAuth, upserts a recipe (replaces by id if present, else assigns one and unshifts); 400 if the box is full (MAX_RECIPES = 300) rather than silently evicting a user-curated save
+POST /api/recipes/list          — requireAuth, full array of the user's saved recipes
+POST /api/recipes/delete        — requireAuth, { recipeId } → removes one recipe, 404 if not found
 
 Removed in the auth migration (do not re-add): `/api/register-code`,
 `/api/account/link-email`, `/api/account/recover`, the `ACTIVATION_CODES`
@@ -96,6 +99,10 @@ fuelplan:push:USERID         — JSON array of Expo push token strings (up to 3 
                                  PushSubscription object anymore, see "Push notifications" below
 fuelplan:note:USERID         — admin-set note (shown in admin dashboard)
 fuelplan:orders:*            — LemonSqueezy order records
+fuelplan:recipes:USERID      — JSON array of RecipeRecord, max 300 (user's
+                                 personal recipe box — imported via share/paste
+                                 or saved manually; 400s when full instead of
+                                 evicting, unlike history's auto-archive)
 
 Old activation-code-era keys (`fuelplan:codes`, `fuelplan:remaining:CODE`,
 `fuelplan:email:*`) are left untouched in Redis from before the migration —
@@ -193,6 +200,25 @@ Should return: {"status":"ok","service":"fuelplan-backend"}
 - **Production doesn't reflect a recent push**: check the deployed commit
   hash (see "Hosting" above) — the GitHub webhook has failed silently before;
   use `railway up` to force a deploy from your local checkout
+
+## redisCommand() fails silently — a bad local .env looks like a data bug
+`redisCommand()` catches every error (network, DNS, auth) and returns
+`null` rather than throwing. That's the right call for production (one
+bad Redis call shouldn't 500 the whole request), but it means a stale or
+wrong `UPSTASH_REDIS_REST_URL`/`TOKEN` in a **local** `.env` doesn't fail
+loudly — every read returns "empty" and every write silently no-ops, while
+endpoints still report `{ ok: true }` with plausible-looking data (e.g. a
+freshly generated id) because the code never sees an error to react to.
+**Real bug hit during Recipe M1**: local `.env` still had an old Upstash
+project's URL (`known-ladybird-88688.upstash.io`, DNS `ENOTFOUND` — the
+database had been recreated at some point and Railway's env got updated
+but the local `.env` never did) while Railway had the current one
+(`stirring-rabbit-183167.upstash.io`). Every save/list/delete against the
+local dev server "worked" but list always came back empty. If local
+Redis-backed endpoints behave like data isn't persisting (saves succeed,
+reads come back empty), **check DNS resolves for `UPSTASH_REDIS_REST_URL`
+before suspecting the endpoint code** — `railway variables --kv | grep
+UPSTASH` to compare against local `.env` is the fastest way to confirm.
 
 ## Adding new endpoints
 Follow the existing pattern in `src/server.ts`:
