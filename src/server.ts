@@ -629,6 +629,7 @@ app.post('/api/recipes/save', requireAuth, async (req: AuthedRequest, res: Respo
 
   try {
     let saved = await saveRecipeRecord(userId, record)
+    console.log('DEBUG photo check', { hasPhoto: !!saved.photo, photoPrefix: saved.photo?.slice(0, 20) })
 
     // A fresh photo arrives as a base64 data URI — move it to Supabase
     // Storage and re-save with just the URL. Soft-fails to keeping the
