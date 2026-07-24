@@ -22,6 +22,10 @@ const MAX_HISTORY = 5
 // oldest one — losing something a user deliberately saved is worse than
 // losing an old auto-generated plan.
 const MAX_RECIPES = 300
+// Shared catalog, not a per-user box — bigger ceiling, and seeded in
+// batches by an admin action rather than user saves, so overflow just
+// stops accepting new batches rather than needing eviction logic.
+const MAX_LIBRARY = 2000
 const JWT_SECRET = process.env.JWT_SECRET || ''
 const JWT_EXPIRY = '90d'
 
@@ -69,6 +73,27 @@ interface RecipeRecord {
   photo?: string
   savedAt: string
   updatedAt?: string
+}
+
+/**
+ * One entry in the shared recipe library — distinct from RecipeRecord
+ * (personal, per-user, `fuelplan:recipes:USERID`). This is a single
+ * shared catalog (`fuelplan:library:all`), admin-seeded via Claude in
+ * batches (see `/api/admin/seed-library`), browsable by every user and
+ * meant to eventually ground plan generation instead of every meal being
+ * invented from scratch per request.
+ */
+interface LibraryRecipe {
+  id: number
+  name: string
+  ingredients: { name: string; qty: string }[]
+  steps: string[]
+  macros: Macros
+  servings: number
+  category: 'breakfast' | 'lunch' | 'dinner' | 'snack'
+  cuisine: string
+  tags: string[]
+  createdAt: string
 }
 
 interface OrderRecord {
@@ -681,6 +706,143 @@ app.post('/api/recipes/extract-instagram-caption', requireAuth, async (req: Auth
   }
 })
 
+// ── Recipe library (shared catalog, distinct from the personal recipe box) ───
+// Lists/searches the shared library — every user reads the same catalog,
+// filtered server-side so the client doesn't have to pull the whole thing
+// (which will only grow) just to show one category.
+app.post('/api/library/list', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const { category, search } = req.body as { category?: string; search?: string }
+  try {
+    let recipes = await getLibrary()
+    if (category) recipes = recipes.filter((r) => r.category === category)
+    if (search) {
+      const q = search.toLowerCase()
+      recipes = recipes.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          r.cuisine.toLowerCase().includes(q) ||
+          r.tags.some((t) => t.toLowerCase().includes(q)) ||
+          r.ingredients.some((i) => i.name.toLowerCase().includes(q))
+      )
+    }
+    return res.json({ recipes })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// Copies one library entry into the signed-in user's personal recipe box —
+// same upsert-by-id logic as a manual save, just pre-filled from the
+// library instead of an extraction. sourcePlatform 'other' since it isn't
+// from a social import.
+app.post('/api/library/add-to-my-recipes', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  const { libraryId } = req.body as { libraryId?: number }
+  if (!libraryId) return res.status(400).json({ error: 'No libraryId' })
+
+  try {
+    const library = await getLibrary()
+    const entry = library.find((r) => r.id === libraryId)
+    if (!entry) return res.status(404).json({ error: 'Library recipe not found' })
+
+    const record: RecipeRecord = {
+      id: 0,
+      name: entry.name,
+      ingredients: entry.ingredients,
+      steps: entry.steps,
+      macros: entry.macros,
+      servings: entry.servings,
+      sourcePlatform: 'other',
+      savedAt: new Date().toISOString(),
+    }
+    const saved = await saveRecipeRecord(userId, record)
+    return res.json({ ok: true, recipe: saved })
+  } catch (err) {
+    return res.status(400).json({ error: (err as Error).message })
+  }
+})
+
+// Admin-only: generates a batch of diverse recipes via Claude and appends
+// them to the shared library. Re-runnable in batches (rather than a
+// one-off local seed script) so the library can grow without a redeploy.
+// Capped per call — a single Claude response has a real token ceiling,
+// and asking for too many at once risks truncated/invalid JSON.
+const SEED_JSON_TEMPLATE = JSON.stringify([
+  {
+    name: '...',
+    ingredients: [{ name: '...', qty: '...' }],
+    steps: ['...'],
+    macros: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+    servings: 0,
+    category: 'breakfast',
+    cuisine: '...',
+    tags: ['...'],
+  },
+])
+
+app.post('/api/admin/seed-library', requireAdmin, async (req: Request, res: Response) => {
+  const { count, category } = req.body as { count?: number; category?: string }
+  const n = Math.min(Math.max(count || 10, 1), 25)
+
+  const system = `You are a professional sports nutritionist and meal prep coach generating recipes for a shared recipe library used by a meal-prep app. Your only job is to generate realistic, varied, genuinely cookable recipes in JSON format.
+CRITICAL RULES:
+- Generate exactly ${n} DIFFERENT recipes — no duplicates or near-duplicates of each other.
+- Vary cuisine, main protein source, and cooking method across the batch — this is a library meant to cover real variety, not ${n} versions of the same dish.
+- category must be one of exactly: "breakfast", "lunch", "dinner", "snack".
+- Estimate macros (kcal/protein/carbs/fat) realistically for the FULL recipe as written, and set servings to how many portions it actually makes — don't default every recipe to 1 serving.
+- tags should be short, useful filter words (e.g. "high-protein", "quick", "vegetarian", "meal-prep-friendly", "low-carb") — 2-4 per recipe.
+- Respond with ONLY a valid JSON array, no markdown, no explanation, no text outside the array.`
+
+  const userMessage =
+    (category ? `All ${n} recipes should be for the "${category}" category.\n\n` : `Mix categories across the ${n} recipes — cover breakfast, lunch, dinner, and snack.\n\n`) +
+    'Return ONLY a valid JSON array, matching this structure exactly:\n' +
+    SEED_JSON_TEMPLATE
+
+  try {
+    const response = await axios.post(
+      'https://api.anthropic.com/v1/messages',
+      { model: 'claude-sonnet-4-6', max_tokens: 8000, system, messages: [{ role: 'user', content: userMessage }] },
+      { headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 120000 }
+    )
+    const text = response.data?.content?.[0]?.text || ''
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
+
+    let parsed: Partial<LibraryRecipe>[]
+    try {
+      parsed = JSON.parse(cleaned)
+    } catch {
+      const match = cleaned.match(/\[[\s\S]*\]/)
+      if (!match) throw new Error('Got invalid JSON back from Claude — try again.')
+      parsed = JSON.parse(match[0])
+    }
+
+    const library = await getLibrary()
+    if (library.length >= MAX_LIBRARY) return res.status(400).json({ error: 'Library is full (' + MAX_LIBRARY + ' recipes).' })
+
+    const now = new Date().toISOString()
+    const newEntries: LibraryRecipe[] = parsed
+      .filter((r) => r.name && r.ingredients?.length && r.steps?.length)
+      .map((r, i) => ({
+        id: Date.now() + i,
+        name: r.name!,
+        ingredients: r.ingredients!,
+        steps: r.steps!,
+        macros: r.macros || {},
+        servings: r.servings && r.servings > 0 ? r.servings : 1,
+        category: (['breakfast', 'lunch', 'dinner', 'snack'].includes(r.category as string) ? r.category : 'lunch') as LibraryRecipe['category'],
+        cuisine: r.cuisine || 'other',
+        tags: r.tags || [],
+        createdAt: now,
+      }))
+
+    const combined = [...library, ...newEntries].slice(0, MAX_LIBRARY)
+    await redisCommand('SET', 'fuelplan:library:all', JSON.stringify(combined))
+    return res.json({ ok: true, added: newEntries.length, totalLibrarySize: combined.length })
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message || 'Seeding failed.' })
+  }
+})
+
 // ── User tracking data (calendar, weights, notes, water goal) ────────────────
 app.post('/api/tracking/save', requireAuth, async (req: AuthedRequest, res: Response) => {
   const userId = req.userId!
@@ -1217,6 +1379,16 @@ async function saveRecipeRecord(userId: string, recipe: RecipeRecord): Promise<R
   }
   await redisCommand('SET', 'fuelplan:recipes:' + userId, JSON.stringify(recipes))
   return existingIndex !== -1 ? recipes[existingIndex] : recipe
+}
+
+async function getLibrary(): Promise<LibraryRecipe[]> {
+  const raw = await redisCommand('GET', 'fuelplan:library:all')
+  if (!raw) return []
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
 }
 
 async function saveToHistory(userId: string, entry: HistoryEntry): Promise<void> {
