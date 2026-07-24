@@ -268,9 +268,29 @@ the current scale; revisit if that stops being true.
 
 **Bucket setup** (one-time, in the Supabase dashboard): create a bucket
 named `recipe-photos`, set it **public** (cover photos aren't sensitive —
-public read access means `getPublicUrl()` works without generating signed
-URLs per request). The service role key is required for the upload/delete
+public read access means the public URL works directly, no signed URLs
+needed). The service role/secret key is required for the upload/delete
 calls to bypass Storage's row-level-security policies from the server.
+
+**Real bug hit and fixed at launch**: the first version used the
+`@supabase/supabase-js` package. Its `createClient()` unconditionally
+constructs a Realtime client, which requires a native `WebSocket` global —
+only present in Node 22+. Railway resolves Node 20.20.2 for this project
+(`package.json`'s `engines.node` only requires `>=20.0.0`), so every
+upload threw `Node.js detected but native WebSocket not found` at
+runtime — silently caught by the save endpoint's soft-fail, so it looked
+like a working "no-op" rather than an error until a debug log surfaced
+the real exception. Same failure class as the earlier
+`expo-server-sdk`/Node-version incident (see "Push notifications" above).
+Fixed by dropping the SDK entirely and talking to Supabase Storage's REST
+API directly via `axios` (`POST /storage/v1/object/{bucket}/{path}` with
+an `x-upsert: true` header, public URL is just
+`{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}`) — we only ever
+needed Storage, not Realtime, so this sidesteps the Node-version gap
+instead of bumping the whole project's `engines.node`. If a future
+Supabase (or any other) SDK addition breaks the build the same way, check
+what Node version Railway actually resolves before assuming the code is
+wrong.
 
 ## Railway migrated its default builder from Nixpacks to Railpack
 Relevant to both scraping features above (`videoExtract.ts` and
