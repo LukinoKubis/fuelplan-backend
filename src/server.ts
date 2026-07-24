@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { Expo, type ExpoPushMessage, type ExpoPushToken } from 'expo-server-sdk'
 import { fileURLToPath } from 'url'
+import { extractTikTokVideoText } from './videoExtract.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -622,6 +623,31 @@ app.post('/api/recipes/delete', requireAuth, async (req: AuthedRequest, res: Res
     return res.json({ ok: true, remaining: recipes.length })
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// Reads spoken audio + on-screen text from a TikTok video the caption alone
+// doesn't cover (see videoExtract.ts for how, and its real caveats). Gated
+// on the user having generation credits left — same abuse-prevention
+// reasoning as /api/claude — but does NOT itself decrement, since the
+// actual recipe-extraction call that follows (through /api/claude) already
+// does. TikTok only; Instagram isn't supported yet (see videoExtract.ts).
+app.post('/api/recipes/extract-video', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  const { url } = req.body as { url?: string }
+  if (!url || typeof url !== 'string') return res.status(400).json({ error: 'No url' })
+  if (!/tiktok\.com/i.test(url)) return res.status(400).json({ error: 'Only TikTok links are supported for video reading right now.' })
+
+  const remaining = await getRemaining(userId)
+  if (remaining !== null && remaining <= 0) {
+    return res.status(402).json({ error: 'Plan limit reached', message: 'You have used all your meal plans. Top up in Settings to keep generating.' })
+  }
+
+  try {
+    const result = await extractTikTokVideoText(url)
+    return res.json(result)
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message || 'Could not read the video.' })
   }
 })
 
