@@ -94,6 +94,10 @@ interface LibraryRecipe {
   cuisine: string
   tags: string[]
   createdAt: string
+  // Only ever present on a /api/library/list response (computed per
+  // request against the calling user's favorites, per-user, not part of
+  // the stored library record itself).
+  favorited?: boolean
 }
 
 interface OrderRecord {
@@ -711,7 +715,8 @@ app.post('/api/recipes/extract-instagram-caption', requireAuth, async (req: Auth
 // filtered server-side so the client doesn't have to pull the whole thing
 // (which will only grow) just to show one category.
 app.post('/api/library/list', requireAuth, async (req: AuthedRequest, res: Response) => {
-  const { category, search } = req.body as { category?: string; search?: string }
+  const userId = req.userId!
+  const { category, search, favoritesOnly } = req.body as { category?: string; search?: string; favoritesOnly?: boolean }
   try {
     let recipes = await getLibrary()
     if (category) recipes = recipes.filter((r) => r.category === category)
@@ -725,7 +730,34 @@ app.post('/api/library/list', requireAuth, async (req: AuthedRequest, res: Respo
           r.ingredients.some((i) => i.name.toLowerCase().includes(q))
       )
     }
-    return res.json({ recipes })
+    const favoriteIds = await getFavoriteLibraryIds(userId)
+    if (favoritesOnly) recipes = recipes.filter((r) => favoriteIds.includes(r.id))
+    const withFavorited = recipes.map((r) => ({ ...r, favorited: favoriteIds.includes(r.id) }))
+    return res.json({ recipes: withFavorited })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// Toggles a library recipe's favorited status for the signed-in user.
+// fuelplan:favorites:USERID is just a JSON array of library recipe ids —
+// deliberately separate from fuelplan:recipes:USERID (the personal box)
+// and from PlanContext's meal-name favorites (a different concern: those
+// bias AI plan generation, this is a bookmark within the library browse UI).
+app.post('/api/library/favorite', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  const { libraryId, favorited } = req.body as { libraryId?: number; favorited?: boolean }
+  if (!libraryId) return res.status(400).json({ error: 'No libraryId' })
+
+  try {
+    let ids = await getFavoriteLibraryIds(userId)
+    if (favorited) {
+      if (!ids.includes(libraryId)) ids = [...ids, libraryId]
+    } else {
+      ids = ids.filter((id) => id !== libraryId)
+    }
+    await redisCommand('SET', 'fuelplan:favorites:' + userId, JSON.stringify(ids))
+    return res.json({ ok: true, favorites: ids })
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message })
   }
@@ -1439,6 +1471,16 @@ async function saveRecipeRecord(userId: string, recipe: RecipeRecord): Promise<R
 
 async function getLibrary(): Promise<LibraryRecipe[]> {
   const raw = await redisCommand('GET', 'fuelplan:library:all')
+  if (!raw) return []
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
+}
+
+async function getFavoriteLibraryIds(userId: string): Promise<number[]> {
+  const raw = await redisCommand('GET', 'fuelplan:favorites:' + userId)
   if (!raw) return []
   try {
     return JSON.parse(raw)
