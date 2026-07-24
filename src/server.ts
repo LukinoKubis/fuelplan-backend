@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken'
 import { Expo, type ExpoPushMessage, type ExpoPushToken } from 'expo-server-sdk'
 import { fileURLToPath } from 'url'
 import { extractTikTokVideoText } from './videoExtract.js'
+import { extractInstagramCaption } from './instagramExtract.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -61,6 +62,11 @@ interface RecipeRecord {
   sourceUrl?: string
   sourceCaption?: string
   sourcePlatform?: 'instagram' | 'tiktok' | 'manual' | 'other'
+  // Cosmetic cover photo, chosen by the user — a base64 data URI (compressed
+  // client-side before it ever reaches here, see fuelplan-mobile's
+  // pickRecipePhoto()). Not validated for size server-side; if the recipe
+  // box ever grows large enough for this to matter, cap it here too.
+  photo?: string
   savedAt: string
   updatedAt?: string
 }
@@ -586,6 +592,7 @@ app.post('/api/recipes/save', requireAuth, async (req: AuthedRequest, res: Respo
     sourceUrl: recipe.sourceUrl,
     sourceCaption: recipe.sourceCaption,
     sourcePlatform: recipe.sourcePlatform,
+    photo: recipe.photo,
     savedAt: recipe.savedAt || new Date().toISOString(),
   }
 
@@ -648,6 +655,29 @@ app.post('/api/recipes/extract-video', requireAuth, async (req: AuthedRequest, r
     return res.json(result)
   } catch (err) {
     return res.status(502).json({ error: (err as Error).message || 'Could not read the video.' })
+  }
+})
+
+// Reads an Instagram post/reel's caption — see instagramExtract.ts for how
+// and its real caveats (login-walled posts still fail, by design, not a
+// bug). Same abuse-prevention gating as extract-video: checks remaining
+// credits, doesn't itself decrement.
+app.post('/api/recipes/extract-instagram-caption', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  const { url } = req.body as { url?: string }
+  if (!url || typeof url !== 'string') return res.status(400).json({ error: 'No url' })
+  if (!/instagram\.com/i.test(url)) return res.status(400).json({ error: 'Only Instagram links are supported here.' })
+
+  const remaining = await getRemaining(userId)
+  if (remaining !== null && remaining <= 0) {
+    return res.status(402).json({ error: 'Plan limit reached', message: 'You have used all your meal plans. Top up in Settings to keep generating.' })
+  }
+
+  try {
+    const caption = await extractInstagramCaption(url)
+    return res.json({ caption })
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message || 'Could not read the caption.' })
   }
 })
 
