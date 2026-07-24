@@ -762,6 +762,51 @@ app.post('/api/library/add-to-my-recipes', requireAuth, async (req: AuthedReques
   }
 })
 
+/**
+ * Scans `[{...}, {...}, ...]`-shaped text for top-level balanced-brace
+ * objects and JSON.parses each independently, skipping any that don't
+ * parse — used when the whole array fails to parse (typically a response
+ * truncated mid-object at the token ceiling). Brace-depth counting, not a
+ * regex, so it isn't confused by braces that appear inside string values
+ * (ingredient/step text can contain them, e.g. weights like "1 (400g) can").
+ */
+function salvageJsonObjects(text: string): unknown[] {
+  const results: unknown[] = []
+  let depth = 0
+  let objectStart = -1
+  let inString = false
+  let escaped = false
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{') {
+      if (depth === 0) objectStart = i
+      depth++
+    } else if (ch === '}') {
+      depth--
+      if (depth === 0 && objectStart !== -1) {
+        try {
+          results.push(JSON.parse(text.slice(objectStart, i + 1)))
+        } catch {
+          /* this one object is malformed — skip it, keep the rest */
+        }
+        objectStart = -1
+      }
+    }
+  }
+  return results
+}
+
 // Admin-only: generates a batch of diverse recipes via Claude and appends
 // them to the shared library. Re-runnable in batches (rather than a
 // one-off local seed script) so the library can grow without a redeploy.
@@ -801,8 +846,13 @@ CRITICAL RULES:
   try {
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
-      { model: 'claude-sonnet-4-6', max_tokens: 8000, system, messages: [{ role: 'user', content: userMessage }] },
-      { headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 120000 }
+      // 16000, not 8000: a batch of 25 recipes (each with ~15 ingredients,
+      // 8 steps) genuinely needs more headroom than the earlier 8000 —
+      // confirmed live, batches of 20 truncated mid-response often enough
+      // to matter (2 of 4 seed calls in one run). max_tokens alone doesn't
+      // fully solve it though, see the salvage-parse fallback below.
+      { model: 'claude-sonnet-4-6', max_tokens: 16000, system, messages: [{ role: 'user', content: userMessage }] },
+      { headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 180000 }
     )
     const text = response.data?.content?.[0]?.text || ''
     const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
@@ -811,9 +861,15 @@ CRITICAL RULES:
     try {
       parsed = JSON.parse(cleaned)
     } catch {
-      const match = cleaned.match(/\[[\s\S]*\]/)
-      if (!match) throw new Error('Got invalid JSON back from Claude — try again.')
-      parsed = JSON.parse(match[0])
+      // A response that got cut off mid-array (hit max_tokens, or any
+      // other malformed spot) fails a strict parse of the whole array —
+      // rather than discarding the entire batch, salvage whatever
+      // complete top-level {...} objects exist and parse those
+      // individually. A batch landing 18/20 recipes instead of 0/20 on a
+      // truncation is a much better failure mode for something this
+      // expensive (a ~1min Claude call) to just throw away.
+      parsed = salvageJsonObjects(cleaned) as Partial<LibraryRecipe>[]
+      if (!parsed.length) throw new Error('Got invalid JSON back from Claude — try again.')
     }
 
     const library = await getLibrary()
