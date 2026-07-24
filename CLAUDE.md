@@ -123,6 +123,11 @@ RESEND_API_KEY             — Resend.com API key (free tier: 3000 emails/month)
 FROM_EMAIL                 — sender address, e.g. "Fuelplan <noreply@fuelplan.fit>"
 EXPO_ACCESS_TOKEN          — optional, only for Expo's enhanced push security feature; push
                               sending works without it. See "Push notifications" below.
+SUPABASE_URL                — Supabase project URL, e.g. https://xxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY   — service role key (server-side only, bypasses RLS) — used to upload
+                              recipe cover photos. Optional: missing/unset just means photo saves
+                              keep the base64 fallback instead of uploading. See "Recipe cover
+                              photo" below.
 
 ## Push notifications
 Swapped from Web Push/VAPID to Expo's push service on 2026-07-24, as part
@@ -237,14 +242,35 @@ characters, or had backslashes silently stripped). If a future scrape
 needs to strip Unicode formatting marks again, use the codepoint-`Set`
 pattern in `unwrapCaption()`, not a character class regex.
 
-## Recipe cover photo
-Purely cosmetic — `Recipe`/`RecipeRecord`'s optional `photo` field is a
-base64 data URI, resized/compressed client-side (`fuelplan-mobile`'s
-`recipePhoto.ts`, max 640px wide, JPEG quality 0.6) before it ever reaches
-this backend. Stored directly on the Redis JSON record — no image hosting
-infra exists, and the recipe box is a personal collection at a scale
-where this is fine. Not validated for size server-side; revisit if the
-box ever grows large enough for that to matter.
+## Recipe cover photo (`recipePhotoStorage.ts`)
+`Recipe`/`RecipeRecord`'s optional `photo` field arrives from the client
+(`fuelplan-mobile`'s `recipePhoto.ts`) as a base64 data URI, already
+resized/compressed (max 640px wide, JPEG quality 0.6). Originally stored
+inline on the Redis JSON record; moved to Supabase Storage on 2026-07-24
+because storing the full image on every record both bloated Redis storage
+and meant `/api/recipes/list` re-downloaded every photo in full on every
+single load, not just when a recipe's detail screen was actually opened.
+
+`POST /api/recipes/save` uploads any `photo` that's still a base64 data
+URI to Supabase Storage (bucket `recipe-photos`, deterministic key
+`userId/recipeId.jpeg` — re-saving a new photo for the same recipe
+overwrites the old object automatically, no orphan cleanup needed for the
+common case) and re-saves the record with just the public URL. Deleting a
+recipe best-effort deletes the matching storage object too. Soft-disabled
+if `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` aren't set — save just keeps
+the base64 inline instead, so a missing/misconfigured Supabase project
+never breaks the feature, just leaves new saves on the heavier path.
+
+**No backfill migration** — recipes saved before this change keep their
+inline base64 `photo` until the user edits that recipe's photo again
+(which re-triggers the upload path via the same save endpoint). Fine at
+the current scale; revisit if that stops being true.
+
+**Bucket setup** (one-time, in the Supabase dashboard): create a bucket
+named `recipe-photos`, set it **public** (cover photos aren't sensitive —
+public read access means `getPublicUrl()` works without generating signed
+URLs per request). The service role key is required for the upload/delete
+calls to bypass Storage's row-level-security policies from the server.
 
 ## Railway migrated its default builder from Nixpacks to Railpack
 Relevant to both scraping features above (`videoExtract.ts` and

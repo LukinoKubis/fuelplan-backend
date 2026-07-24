@@ -10,6 +10,7 @@ import { Expo, type ExpoPushMessage, type ExpoPushToken } from 'expo-server-sdk'
 import { fileURLToPath } from 'url'
 import { extractTikTokVideoText } from './videoExtract.js'
 import { extractInstagramCaption } from './instagramExtract.js'
+import { uploadRecipePhoto, deleteRecipePhoto } from './recipePhotoStorage.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -66,10 +67,11 @@ interface RecipeRecord {
   sourceUrl?: string
   sourceCaption?: string
   sourcePlatform?: 'instagram' | 'tiktok' | 'manual' | 'other'
-  // Cosmetic cover photo, chosen by the user — a base64 data URI (compressed
-  // client-side before it ever reaches here, see fuelplan-mobile's
-  // pickRecipePhoto()). Not validated for size server-side; if the recipe
-  // box ever grows large enough for this to matter, cap it here too.
+  // Cosmetic cover photo, chosen by the user. Arrives as a base64 data URI
+  // (compressed client-side, see fuelplan-mobile's pickRecipePhoto()) —
+  // /api/recipes/save uploads it to Supabase Storage and replaces this
+  // with a public URL (see recipePhotoStorage.ts). Only stays a raw data
+  // URI if Supabase isn't configured, as a soft-fail fallback.
   photo?: string
   savedAt: string
   updatedAt?: string
@@ -626,7 +628,21 @@ app.post('/api/recipes/save', requireAuth, async (req: AuthedRequest, res: Respo
   }
 
   try {
-    const saved = await saveRecipeRecord(userId, record)
+    let saved = await saveRecipeRecord(userId, record)
+
+    // A fresh photo arrives as a base64 data URI — move it to Supabase
+    // Storage and re-save with just the URL. Soft-fails to keeping the
+    // base64 inline if Supabase isn't configured or the upload errors, so
+    // this never blocks the actual recipe save.
+    if (saved.photo && saved.photo.startsWith('data:image/')) {
+      try {
+        const url = await uploadRecipePhoto(userId, saved.id, saved.photo)
+        saved = await saveRecipeRecord(userId, { ...saved, photo: url })
+      } catch {
+        // keep the base64 inline
+      }
+    }
+
     return res.json({ ok: true, recipe: saved })
   } catch (err) {
     return res.status(400).json({ error: (err as Error).message })
@@ -656,6 +672,7 @@ app.post('/api/recipes/delete', requireAuth, async (req: AuthedRequest, res: Res
     recipes = recipes.filter((r) => r.id !== recipeId)
     if (recipes.length === before) return res.status(404).json({ error: 'Recipe not found' })
     await redisCommand('SET', 'fuelplan:recipes:' + userId, JSON.stringify(recipes))
+    deleteRecipePhoto(userId, recipeId).catch(() => {})
     return res.json({ ok: true, remaining: recipes.length })
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message })
