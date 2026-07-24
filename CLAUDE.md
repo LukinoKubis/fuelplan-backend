@@ -207,8 +207,49 @@ platform — this downloads the actual video and processes it:
   does **not** itself decrement a credit — the recipe-extraction call that
   follows (through `/api/claude`) already does.
 
-### Railway migrated its default builder from Nixpacks to Railpack
-Discovered the hard way adding this feature: a `nixpacks.toml` with
+## Instagram caption reading (`instagramExtract.ts`)
+`POST /api/recipes/extract-instagram-caption` — Instagram's oEmbed and
+public API don't expose captions without Meta App Review, but a post's
+`og:description` meta tag carries the caption verbatim (format: `N likes,
+N comments - username on <date>: "<caption>".`), confirmed live. That tag
+is injected client-side by Instagram's own React app (a plain `fetch()`
+finds nothing in the raw HTML), so this needs the same
+real-headless-Chromium approach as `videoExtract.ts` — but the extraction
+itself is much simpler and faster: no video/audio/ffmpeg at all, just
+navigate and read one meta tag (~2-5s vs 8-14s for TikTok's video read).
+
+**Only works for genuinely public posts** — private accounts,
+age-restricted content, and some posts under load still show a login wall
+(no caption meta tag at all), which surfaces as a clean error, not a bug.
+Same `requireAuth` + `remaining > 0` gate as `extract-video`, no decrement.
+
+**Real bug hit and fixed**: Instagram sprinkles invisible Unicode
+direction-mark characters into the `og:description` string (one sits
+right at the very end) — silently broke a naive `$`-anchored regex trying
+to strip the `"N likes, ... : "..."."` wrapper down to just the caption
+(the trailing mark isn't `\s`, so the anchor never matched, and the whole
+unstripped wrapper text got returned instead). Fixed by filtering
+characters by **codepoint** (a `Set` of the specific invisible-mark
+codepoints) rather than embedding invisible characters directly in source
+or writing a regex with `\u` escape sequences — both of those got mangled
+by the editing tooling along the way (turned into more invisible
+characters, or had backslashes silently stripped). If a future scrape
+needs to strip Unicode formatting marks again, use the codepoint-`Set`
+pattern in `unwrapCaption()`, not a character class regex.
+
+## Recipe cover photo
+Purely cosmetic — `Recipe`/`RecipeRecord`'s optional `photo` field is a
+base64 data URI, resized/compressed client-side (`fuelplan-mobile`'s
+`recipePhoto.ts`, max 640px wide, JPEG quality 0.6) before it ever reaches
+this backend. Stored directly on the Redis JSON record — no image hosting
+infra exists, and the recipe box is a personal collection at a scale
+where this is fine. Not validated for size server-side; revisit if the
+box ever grows large enough for that to matter.
+
+## Railway migrated its default builder from Nixpacks to Railpack
+Relevant to both scraping features above (`videoExtract.ts` and
+`instagramExtract.ts`), since both need Chromium to actually launch at
+runtime. Discovered the hard way adding video reading: a `nixpacks.toml` with
 Chromium's required apt packages + a custom install command was **silently
 ignored** — confirmed from the actual build log (`[railpack] merge
 $packages:apt:runtime, ...` lines; only Railpack's own auto-detected
