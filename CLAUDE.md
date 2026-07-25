@@ -82,6 +82,18 @@ POST /api/history/archive       — requireAuth, archives instead of hard-deleti
 POST /api/recipes/save          — requireAuth, upserts a recipe (replaces by id if present, else assigns one and unshifts); 400 if the box is full (MAX_RECIPES = 300) rather than silently evicting a user-curated save
 POST /api/recipes/list          — requireAuth, full array of the user's saved recipes
 POST /api/recipes/delete        — requireAuth, { recipeId } → removes one recipe, 404 if not found
+POST /api/claude/suggest        — requireAuth, does NOT decrement a credit, 1200-token cap; for
+                                    lightweight one-shot suggestions (fuelplan-mobile's "Get AI
+                                    Advice") — prefer this over /api/claude for anything that
+                                    shouldn't cost a full generation credit
+POST /api/account/delete        — requireAuth, deletes every per-user Redis key (user record,
+                                    remaining credits, history, archive, tracking, push tokens,
+                                    admin note, recipes, favorites) — keeps order/payment records
+                                    for accounting/legal reasons. Required for App Store
+                                    compliance (self-serve account deletion), not just a nicety.
+POST /api/feedback/submit       — requireAuth, rate-limited 5/hour, stores to
+                                    fuelplan:feedback:all (max 500, newest first), best-effort
+                                    emails FEEDBACK_NOTIFY_EMAIL via Resend if configured
 
 Removed in the auth migration (do not re-add): `/api/register-code`,
 `/api/account/link-email`, `/api/account/recover`, the `ACTIVATION_CODES`
@@ -104,7 +116,12 @@ fuelplan:orders:*            — LemonSqueezy order records
 fuelplan:recipes:USERID      — JSON array of RecipeRecord, max 300 (user's
                                  personal recipe box — imported via share/paste
                                  or saved manually; 400s when full instead of
-                                 evicting, unlike history's auto-archive)
+                                 evicting, unlike history's auto-archive).
+                                 Each record carries an optional `tags: string[]`
+                                 — free-form user-created labels, plain passthrough
+                                 field on /api/recipes/save, no server-side validation
+fuelplan:feedback:all        — JSON array of feedback submissions, max 500,
+                                 newest first (see POST /api/feedback/submit above)
 
 Old activation-code-era keys (`fuelplan:codes`, `fuelplan:remaining:CODE`,
 `fuelplan:email:*`) are left untouched in Redis from before the migration —
