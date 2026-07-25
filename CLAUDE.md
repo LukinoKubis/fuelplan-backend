@@ -374,6 +374,37 @@ reads come back empty), **check DNS resolves for `UPSTASH_REDIS_REST_URL`
 before suspecting the endpoint code** — `railway variables --kv | grep
 UPSTASH` to compare against local `.env` is the fastest way to confirm.
 
+## /api/claude's shared message sanitizer has a length cap — check it before adding a new caller
+`sanitizeUserContent()` (near `/api/claude`) silently truncates any message
+content over `MAX_MESSAGE_CONTENT_LENGTH` before forwarding to Anthropic,
+applied unconditionally to every `/api/claude` call regardless of which
+feature is calling it. It was originally sized (3000 chars) for the
+original callers — single free-text fields like dietary restrictions —
+where that's plenty and also caps genuinely oversized pastes.
+
+**Real bug hit and fixed**: `fuelplan-mobile`'s Library M5 algorithmic
+plan generation added a new caller (`prepAndShoppingPrompt.ts`) that
+legitimately sends a full 7-day, 28-meal ingredient list through this same
+endpoint — routinely 11-12k characters, nowhere near "user free text" in
+size. It got silently truncated mid-meal-list before reaching Anthropic;
+Claude correctly noticed the cut ("your message was cut off at Wednesday
+Lunch...") and replied asking for the rest instead of returning JSON,
+which surfaced client-side as "Got invalid JSON back. Please try again."
+on **every single generation** — confirmed live, reproduced twice
+identically before being traced here. Diagnosed by generating the exact
+request body standalone (complete and correct, no truncation) and
+comparing against this function's logic, not by suspecting the client.
+Fixed by raising the cap to 20000 — comfortable headroom for this payload
+shape while still bounding genuinely oversized free-text pastes in the
+original fields.
+
+**Lesson**: if a new feature adds another caller to `/api/claude` with a
+message shape unlike the existing ones (especially anything long or
+structured, not a short free-text answer), check `MAX_MESSAGE_CONTENT_LENGTH`
+before assuming a JSON-parse failure is a prompt-compliance problem —
+verify what request actually left the client isn't already the truncated
+version.
+
 ## Adding new endpoints
 Follow the existing pattern in `src/server.ts`:
 1. Add `requireAuth` middleware (populates `req.userId`/`req.userEmail`) for
