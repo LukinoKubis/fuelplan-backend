@@ -86,6 +86,13 @@ POST /api/claude/suggest        — requireAuth, does NOT decrement a credit, 12
                                     lightweight one-shot suggestions (fuelplan-mobile's "Get AI
                                     Advice") — prefer this over /api/claude for anything that
                                     shouldn't cost a full generation credit
+POST /api/claude/prep-and-shopping — requireAuth, does NOT decrement a credit, rate-limited
+                                    (8/hour per user) instead, 6500-token cap. Same idea as
+                                    /api/claude/suggest but sized for a bigger free payload
+                                    (fuelplan-mobile's Custom Plan prep/shopping generation,
+                                    ~6000 tokens — too big for /suggest's 1200 cap). Free "for
+                                    now" per an explicit product call, pending a freemium
+                                    monetization rework — revisit whether this should decrement
 POST /api/account/delete        — requireAuth, deletes every per-user Redis key (user record,
                                     remaining credits, history, archive, tracking, push tokens,
                                     admin note, recipes, favorites) — keeps order/payment records
