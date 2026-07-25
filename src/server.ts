@@ -890,14 +890,33 @@ const SEED_JSON_TEMPLATE = JSON.stringify([
 ])
 
 app.post('/api/admin/seed-library', requireAdmin, async (req: Request, res: Response) => {
-  const { count, category } = req.body as { count?: number; category?: string }
+  const { count, category, style, cuisine, minProteinDensity } = req.body as {
+    count?: number
+    category?: string
+    // Overrides the default "vary everything" instruction with a targeted
+    // batch — used for e.g. simple high-protein staples ("chicken breast,
+    // rice, steamed broccoli" — real bug hit: the default varied-cuisine
+    // seeding undersupplied genuinely simple, very-high-protein-density
+    // recipes, which meant the picker couldn't reliably hit high protein
+    // targets even though the math said it should be possible).
+    style?: string
+    cuisine?: string
+    minProteinDensity?: number
+  }
   const n = Math.min(Math.max(count || 10, 1), 25)
+
+  const styleRules = style
+    ? `- These ${n} recipes must all fit this style: ${style}. Still make them genuinely different from each other (different protein sources, different sides/preparations) within that style — not ${n} near-duplicates.\n`
+    : `- Vary cuisine, main protein source, and cooking method across the batch — this is a library meant to cover real variety, not ${n} versions of the same dish.\n`
+  const cuisineRule = cuisine ? `- Set "cuisine" to exactly "${cuisine}" for every recipe in this batch.\n` : ''
+  const proteinRule = minProteinDensity
+    ? `- Every recipe must be genuinely high-protein: at least ${minProteinDensity}g of protein per 100kcal (compute this from your own macros before finalizing — if a recipe doesn't hit it, adjust the recipe, don't just report a number that doesn't match the ingredients).\n`
+    : ''
 
   const system = `You are a professional sports nutritionist and meal prep coach generating recipes for a shared recipe library used by a meal-prep app. Your only job is to generate realistic, varied, genuinely cookable recipes in JSON format.
 CRITICAL RULES:
 - Generate exactly ${n} DIFFERENT recipes — no duplicates or near-duplicates of each other.
-- Vary cuisine, main protein source, and cooking method across the batch — this is a library meant to cover real variety, not ${n} versions of the same dish.
-- category must be one of exactly: "breakfast", "lunch", "dinner", "snack".
+${styleRules}${cuisineRule}${proteinRule}- category must be one of exactly: "breakfast", "lunch", "dinner", "snack".
 - difficulty must be one of exactly: "beginner", "intermediate", "advanced" — rate the recipe honestly by real cooking skill required (number of techniques, how much multitasking/timing precision, how many components), not by how long it takes. A one-pot dish with 4 basic steps is beginner even if it simmers for an hour; a dish requiring a sauce reduction, precise searing, and plating in one active window is advanced even if it's quick. Spread difficulty across the batch — don't make everything intermediate.
 - Estimate macros (kcal/protein/carbs/fat) realistically for the FULL recipe as written, and set servings to how many portions it actually makes — don't default every recipe to 1 serving.
 - tags should be short, useful filter words (e.g. "high-protein", "quick", "vegetarian", "meal-prep-friendly", "low-carb") — 2-4 per recipe.
