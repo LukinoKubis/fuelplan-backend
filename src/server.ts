@@ -94,6 +94,7 @@ interface LibraryRecipe {
   servings: number
   category: 'breakfast' | 'lunch' | 'dinner' | 'snack'
   cuisine: string
+  difficulty: 'beginner' | 'intermediate' | 'advanced'
   tags: string[]
   createdAt: string
   // Only ever present on a /api/library/list response (computed per
@@ -733,10 +734,11 @@ app.post('/api/recipes/extract-instagram-caption', requireAuth, async (req: Auth
 // (which will only grow) just to show one category.
 app.post('/api/library/list', requireAuth, async (req: AuthedRequest, res: Response) => {
   const userId = req.userId!
-  const { category, search, favoritesOnly } = req.body as { category?: string; search?: string; favoritesOnly?: boolean }
+  const { category, search, favoritesOnly, difficulty } = req.body as { category?: string; search?: string; favoritesOnly?: boolean; difficulty?: string }
   try {
     let recipes = await getLibrary()
     if (category) recipes = recipes.filter((r) => r.category === category)
+    if (difficulty) recipes = recipes.filter((r) => r.difficulty === difficulty)
     if (search) {
       const q = search.toLowerCase()
       recipes = recipes.filter(
@@ -870,6 +872,7 @@ const SEED_JSON_TEMPLATE = JSON.stringify([
     servings: 0,
     category: 'breakfast',
     cuisine: '...',
+    difficulty: 'beginner',
     tags: ['...'],
   },
 ])
@@ -883,6 +886,7 @@ CRITICAL RULES:
 - Generate exactly ${n} DIFFERENT recipes — no duplicates or near-duplicates of each other.
 - Vary cuisine, main protein source, and cooking method across the batch — this is a library meant to cover real variety, not ${n} versions of the same dish.
 - category must be one of exactly: "breakfast", "lunch", "dinner", "snack".
+- difficulty must be one of exactly: "beginner", "intermediate", "advanced" — rate the recipe honestly by real cooking skill required (number of techniques, how much multitasking/timing precision, how many components), not by how long it takes. A one-pot dish with 4 basic steps is beginner even if it simmers for an hour; a dish requiring a sauce reduction, precise searing, and plating in one active window is advanced even if it's quick. Spread difficulty across the batch — don't make everything intermediate.
 - Estimate macros (kcal/protein/carbs/fat) realistically for the FULL recipe as written, and set servings to how many portions it actually makes — don't default every recipe to 1 serving.
 - tags should be short, useful filter words (e.g. "high-protein", "quick", "vegetarian", "meal-prep-friendly", "low-carb") — 2-4 per recipe.
 - Respond with ONLY a valid JSON array, no markdown, no explanation, no text outside the array.`
@@ -936,6 +940,7 @@ CRITICAL RULES:
         servings: r.servings && r.servings > 0 ? r.servings : 1,
         category: (['breakfast', 'lunch', 'dinner', 'snack'].includes(r.category as string) ? r.category : 'lunch') as LibraryRecipe['category'],
         cuisine: r.cuisine || 'other',
+        difficulty: (['beginner', 'intermediate', 'advanced'].includes(r.difficulty as string) ? r.difficulty : 'intermediate') as LibraryRecipe['difficulty'],
         tags: r.tags || [],
         createdAt: now,
       }))
@@ -945,6 +950,54 @@ CRITICAL RULES:
     return res.json({ ok: true, added: newEntries.length, totalLibrarySize: combined.length })
   } catch (err) {
     return res.status(502).json({ error: (err as Error).message || 'Seeding failed.' })
+  }
+})
+
+/**
+ * Free, deterministic complexity score (no AI call) — used only to
+ * backfill library recipes seeded before the `difficulty` field existed.
+ * Ingredient/step counts plus a few technique keywords are a decent proxy;
+ * not as good as Claude's own judgment (see the seed prompt's rules above,
+ * which new recipes get directly), but good enough for a one-time
+ * migration that shouldn't cost anything to run.
+ */
+function complexityScore(recipe: { ingredients: { name: string }[]; steps: string[] }): number {
+  const stepText = recipe.steps.join(' ').toLowerCase()
+  const advancedKeywords = ['reduce', 'reduction', 'sear', 'temper', 'fold', 'flambé', 'flambe', 'clarify', 'emulsify', 'sous vide', 'deglaze', 'braise', 'confit', 'julienne', 'brunoise']
+  const beginnerKeywords = ['microwave', 'no-cook', 'combine', 'mix together', 'toss', 'assemble']
+
+  let score = recipe.ingredients.length + recipe.steps.length * 1.5
+  if (advancedKeywords.some((k) => stepText.includes(k))) score += 5
+  if (recipe.steps.length <= 4 && beginnerKeywords.some((k) => stepText.includes(k))) score -= 3
+  return score
+}
+
+// One-time migration for recipes seeded before `difficulty` existed —
+// safe to re-run, only touches entries missing a valid value. Buckets by
+// RELATIVE rank (bottom/middle/top third of this batch's complexity
+// scores) rather than fixed thresholds — a first attempt with fixed
+// cutoffs put 0 recipes in "beginner" and 65/106 in "advanced" (real
+// meal-prep recipes in this library are rarely as simple as an absolute
+// threshold assumed), confirmed live before this fix.
+app.post('/api/admin/backfill-library-difficulty', requireAdmin, async (req: Request, res: Response) => {
+  const { force } = req.body as { force?: boolean }
+  try {
+    const library = await getLibrary()
+    const missing = library.filter((r) => force || !['beginner', 'intermediate', 'advanced'].includes(r.difficulty))
+    if (!missing.length) return res.json({ ok: true, updated: 0, totalLibrarySize: library.length })
+
+    const ranked = [...missing].sort((a, b) => complexityScore(a) - complexityScore(b))
+    const third = Math.ceil(ranked.length / 3)
+    const difficultyById = new Map<number, LibraryRecipe['difficulty']>()
+    ranked.forEach((r, i) => {
+      difficultyById.set(r.id, i < third ? 'beginner' : i < third * 2 ? 'intermediate' : 'advanced')
+    })
+
+    const next = library.map((r) => (difficultyById.has(r.id) ? { ...r, difficulty: difficultyById.get(r.id)! } : r))
+    await redisCommand('SET', 'fuelplan:library:all', JSON.stringify(next))
+    return res.json({ ok: true, updated: missing.length, totalLibrarySize: next.length })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
   }
 })
 
