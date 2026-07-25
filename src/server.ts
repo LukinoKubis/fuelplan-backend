@@ -284,13 +284,25 @@ interface ClaudeMessage {
   content: unknown
 }
 
+// 3000 was sized for the original callers (single free-text fields like
+// dietary restrictions/dislikes) — real bug hit and fixed when
+// planAssembly.ts's prep/shopping request started legitimately sending a
+// full 7-day, 28-meal ingredient list (~11-12k chars) through this same
+// endpoint: it was silently truncated mid-list, and Claude correctly
+// noticed the cut and replied asking for the rest instead of returning
+// JSON, which the client then failed to parse. 20000 comfortably covers
+// that real structured payload with headroom while still bounding
+// genuinely oversized free-text pastes in the fields this was originally
+// built for.
+const MAX_MESSAGE_CONTENT_LENGTH = 20000
+
 function sanitizeUserContent(messages: unknown): unknown {
   if (!Array.isArray(messages)) return messages
   return messages.map((msg: ClaudeMessage) => {
     if (typeof msg.content !== 'string') return msg
-    if (msg.content.length > 3000) {
+    if (msg.content.length > MAX_MESSAGE_CONTENT_LENGTH) {
       console.warn('Message content truncated')
-      msg.content = msg.content.slice(0, 3000)
+      msg.content = msg.content.slice(0, MAX_MESSAGE_CONTENT_LENGTH)
     }
     return msg
   })
