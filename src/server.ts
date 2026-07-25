@@ -1435,6 +1435,38 @@ app.post('/api/admin/history', requireAdmin, async (req: Request, res: Response)
   return res.json({ history })
 })
 
+// ── Prep+shopping proxy for user-picked (Custom) plans — does NOT decrement,
+// rate-limited instead (unlike /api/claude/suggest above, this needs real
+// headroom on max_tokens — a week's prep_tasks/shopping_list JSON routinely
+// runs 6000 tokens, way past /api/claude/suggest's deliberately tiny
+// 1200-token abuse cap for one-line suggestions). Free "for now" per an
+// explicit product call (issue-free monetization rework pending) — revisit
+// whether this should decrement once that lands.
+app.post('/api/claude/prep-and-shopping', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  if (!rateLimit('prepshop:' + userId, 8, 3600000)) {
+    return res.status(429).json({ error: 'Too many plan builds this hour — try again shortly.' })
+  }
+  const payload = req.body as ClaudeProxyBody
+  if (typeof payload.max_tokens === 'number' && payload.max_tokens > 6500) payload.max_tokens = 6500
+  if (payload.messages) payload.messages = sanitizeUserContent(payload.messages) as ClaudeMessage[]
+  try {
+    const response = await axios.post('https://api.anthropic.com/v1/messages', payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      timeout: 120000,
+    })
+    return res.status(response.status).json(response.data)
+  } catch (err) {
+    const isTimeout = (err as any).code === 'ECONNABORTED' || (err as Error).message.includes('timeout')
+    if (isTimeout) return res.status(504).json({ error: 'Request timed out — please try again.' })
+    return res.status(500).json({ error: 'AI service error — please try again.' })
+  }
+})
+
 // ── Suggestion proxy (meal swap, etc.) — validates auth but does NOT decrement ─
 app.post('/api/claude/suggest', requireAuth, async (req: AuthedRequest, res: Response) => {
   const payload = req.body as ClaudeProxyBody
