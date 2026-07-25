@@ -67,6 +67,10 @@ interface RecipeRecord {
   sourceUrl?: string
   sourceCaption?: string
   sourcePlatform?: 'instagram' | 'tiktok' | 'manual' | 'other'
+  // Free-form user-created labels (e.g. "quick", "meal prep", "high protein")
+  // — how the personal recipe box is organized/filtered client-side. No
+  // separate folder concept; a recipe can carry any number of tags.
+  tags?: string[]
   // Cosmetic cover photo, chosen by the user. Arrives as a base64 data URI
   // (compressed client-side, see fuelplan-mobile's pickRecipePhoto()) —
   // /api/recipes/save uploads it to Supabase Storage and replaces this
@@ -712,6 +716,7 @@ app.post('/api/recipes/save', requireAuth, async (req: AuthedRequest, res: Respo
     sourceUrl: recipe.sourceUrl,
     sourceCaption: recipe.sourceCaption,
     sourcePlatform: recipe.sourcePlatform,
+    tags: recipe.tags || [],
     photo: recipe.photo,
     savedAt: recipe.savedAt || new Date().toISOString(),
   }
