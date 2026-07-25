@@ -479,6 +479,82 @@ app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
   }
 })
 
+// Self-serve account deletion — required for App Store review (Apple has
+// mandated in-app account deletion for any app that supports account
+// creation since 2022) and just the right thing to do. Removes every
+// per-user Redis key, not just the account record itself — the old
+// admin-only /api/admin/revoke-user only zeroed credits and dropped the
+// registry entry, it never actually deleted the user's data. Payment/order
+// records (fuelplan:orders:*) are deliberately NOT deleted — kept for
+// accounting/legal purposes, same as stated in the privacy policy.
+app.post('/api/account/delete', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  try {
+    const user = await getUserById(userId)
+    const keys = [
+      'fuelplan:user:' + userId,
+      'fuelplan:remaining:' + userId,
+      'fuelplan:history:' + userId,
+      'fuelplan:archive:' + userId,
+      'fuelplan:tracking:' + userId,
+      'fuelplan:push:' + userId,
+      'fuelplan:note:' + userId,
+      'fuelplan:recipes:' + userId,
+      'fuelplan:favorites:' + userId,
+    ]
+    if (user?.email) keys.push('fuelplan:user:email:' + user.email)
+    await Promise.all(keys.map((k) => redisCommand('DEL', k)))
+    await redisCommand('SREM', 'fuelplan:users', userId)
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+const MAX_FEEDBACK = 500
+
+// User-submitted suggestions/bug reports. Stored server-side
+// (fuelplan:feedback:all, capped, newest first — no admin UI to browse
+// these yet, read via the Upstash console or a future admin endpoint) and
+// best-effort emailed to the app owner via the same Resend setup
+// forgot-password already uses, so nothing gets missed waiting on someone
+// to go check Redis.
+app.post('/api/feedback/submit', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const userId = req.userId!
+  const userEmail = req.userEmail || ''
+  const { message } = req.body as { message?: string }
+  const trimmed = (message || '').trim().slice(0, 2000)
+  if (!trimmed) return res.status(400).json({ error: 'No message' })
+  if (!rateLimit('feedback:' + userId, 5, 3600000)) return res.status(429).json({ error: 'Too many requests — try again later.' })
+
+  try {
+    const raw = await redisCommand('GET', 'fuelplan:feedback:all')
+    const existing = raw ? JSON.parse(raw) : []
+    const entry = { userId, email: userEmail, message: trimmed, submittedAt: new Date().toISOString() }
+    const next = [entry, ...existing].slice(0, MAX_FEEDBACK)
+    await redisCommand('SET', 'fuelplan:feedback:all', JSON.stringify(next))
+
+    if (process.env.RESEND_API_KEY && process.env.FEEDBACK_NOTIFY_EMAIL) {
+      axios
+        .post(
+          'https://api.resend.com/emails',
+          {
+            from: process.env.FROM_EMAIL || 'Fuelplan <noreply@fuelplan.fit>',
+            to: [process.env.FEEDBACK_NOTIFY_EMAIL],
+            subject: 'New Fuelplan feedback',
+            html: `<p>From: ${userEmail || userId}</p><p>${trimmed.replace(/</g, '&lt;')}</p>`,
+          },
+          { headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' } }
+        )
+        .catch((err) => console.error('Feedback notify email error:', err.message))
+    }
+
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 // ── Main Claude proxy ─────────────────────────────────────────────────────────
 interface ClaudeProxyBody {
   planMeta?: HistoryEntry
