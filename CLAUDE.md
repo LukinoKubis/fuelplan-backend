@@ -93,6 +93,10 @@ POST /api/claude/prep-and-shopping — requireAuth, does NOT decrement a credit,
                                     ~6000 tokens — too big for /suggest's 1200 cap). Free "for
                                     now" per an explicit product call, pending a freemium
                                     monetization rework — revisit whether this should decrement
+POST /api/admin/update-library-macros — requireAdmin, { corrections: [{id, macros}] } → writes
+                                    straight to Redis, NO Anthropic call at all (see "The
+                                    ANTHROPIC_API_KEY is for real app users" below for why).
+                                    Used for the 2026-07-26 library-wide macro-accuracy fix.
 POST /api/account/delete        — requireAuth, deletes every per-user Redis key (user record,
                                     remaining credits, history, archive, tracking, push tokens,
                                     admin note, recipes, favorites) — keeps order/payment records
@@ -435,6 +439,25 @@ Follow the existing pattern in `src/server.ts`:
    anything user-scoped, or `requireAdmin` for `/api/admin/*`
 2. Do Redis operations via `redisCommand(command, ...args)`, keyed by `userId`
 3. Return JSON response
+
+## The ANTHROPIC_API_KEY is for real app users, not for developer/maintenance work
+Real incident: a library-wide macro-accuracy fix (see `/api/admin/update-library-macros`
+below) was originally built as an AI-calling endpoint that re-sent each
+recipe through Claude to recompute its macros — burned through the
+account's entire Anthropic credit balance mid-migration (only the
+developer was using the app at the time, no real user traffic yet) and
+took down every AI feature (Generate, Custom Plan, AI Advice, recipe
+import) for actual users until it was topped up. Explicit direction
+afterward: **never spend the app's Anthropic key/credit balance on
+internal maintenance, migrations, or admin tooling** — that budget is for
+real end users. `/api/admin/update-library-macros` was rewritten to be a
+plain data-write endpoint (`{ corrections: [{id, macros}] }` → validates
++ writes straight to Redis, zero Anthropic calls) — the actual macro
+values for a bulk fix like that should be computed by the developer
+(by hand, or by an assistant working from its own knowledge/subscription,
+not through this app's paid key) and POSTed in as plain data. If a future
+admin/maintenance task seems to need an AI call, stop and ask first
+rather than defaulting to routing it through `ANTHROPIC_API_KEY`.
 
 ## Deploy process
 ```
