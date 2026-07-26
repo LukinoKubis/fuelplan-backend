@@ -1113,71 +1113,43 @@ app.post('/api/admin/backfill-library-difficulty', requireAdmin, async (req: Req
   }
 })
 
-// One-time (re-runnable in batches) macro-accuracy correction pass. Real
-// bug found live: /api/admin/seed-library's original prompt only said
-// "estimate macros realistically for the full recipe" -- no per-ingredient
-// methodology -- which let Claude eyeball whole-dish totals instead of
-// actually summing ingredient nutrition. Confirmed with "Overnight Oats
-// with Banana and Peanut Butter" (300g oats + 600ml milk + 4 tbsp peanut
-// butter + 2 bananas + chia, servings=4): stored macros were ~410
-// kcal/14g protein per serving; a careful per-ingredient sum lands closer
-// to ~580 kcal/21g protein per serving -- the ratios were self-consistent
-// (kcal really did equal 4P+4C+9F) but the absolute numbers were low
-// across the board, not just this one recipe. This endpoint re-sends each
-// recipe's EXISTING name/ingredients/servings (untouched) through a much
-// stricter per-ingredient-summation prompt and overwrites only `macros`.
-app.post('/api/admin/recompute-macros', requireAdmin, async (req: Request, res: Response) => {
-  const { offset, limit } = req.body as { offset?: number; limit?: number }
-  const start = Math.max(0, offset || 0)
-  const batchSize = Math.min(Math.max(limit || 25, 1), 40)
+// Direct-write macro correction — NOT an AI call. Real bug found live:
+// /api/admin/seed-library's original prompt only said "estimate macros
+// realistically for the full recipe" -- no per-ingredient methodology --
+// which let Claude eyeball whole-dish totals instead of actually summing
+// ingredient nutrition. Confirmed with "Overnight Oats with Banana and
+// Peanut Butter" (300g oats + 600ml milk + 4 tbsp peanut butter + 2
+// bananas + chia, servings=4): stored macros were ~410 kcal/14g protein
+// per serving; a careful per-ingredient sum lands closer to ~580 kcal/21g
+// protein per serving. Fixing this for the whole library was originally
+// done by re-sending each recipe through Claude via the paid /api/claude
+// key -- explicitly reverted (see git history for the AI-calling version)
+// per the user: that API key is for real app users, not for the person
+// developing the app to run internal maintenance/migrations against.
+// Corrections are computed by hand/by the developer instead and POSTed
+// here as plain data -- this endpoint just validates + writes to Redis.
+app.post('/api/admin/update-library-macros', requireAdmin, async (req: Request, res: Response) => {
+  const { corrections } = req.body as { corrections?: { id: number; macros: Macros }[] }
+  if (!Array.isArray(corrections) || !corrections.length) return res.status(400).json({ error: 'corrections array required' })
 
   try {
     const library = await getLibrary()
-    const batch = library.slice(start, start + batchSize)
-    if (!batch.length) return res.json({ ok: true, updated: 0, remaining: 0, totalLibrarySize: library.length })
-
-    const system = `You are a meticulous nutrition analyst. Your only job is to recompute accurate whole-recipe macros (kcal/protein/carbs/fat) for a batch of recipes, given their exact ingredients and quantities.
-CRITICAL METHOD — follow this for every recipe, no shortcuts:
-- For EACH ingredient, look up its standard nutrition value per 100g (or per typical unit, e.g. "1 large egg") from your own knowledge of USDA-style reference values, scale it to the quantity given, then SUM across all ingredients to get the whole-recipe total. Do not eyeball the finished dish as a whole — compute it ingredient by ingredient.
-- Common underestimation traps to watch for specifically: dry grains/oats/rice/pasta are calorie-dense (~350-380 kcal per 100g dry, NOT per 100g cooked), nuts/seeds/nut butters are very calorie- and fat-dense (~550-600 kcal per 100g), cheese and oils are fat-dense. Underestimating any of these is the single most common mistake — double-check any recipe containing them.
-- "servings" is given and fixed — you are computing the WHOLE-RECIPE total (all servings combined, matching how it's already stored), not a per-serving amount. Do not change servings.
-- Ignore the recipe's current stored macros entirely — they may be wrong, that's exactly what you're fixing. Compute fresh from the ingredients.
-- Respond with ONLY a valid JSON array, no markdown, no explanation: [{"id": 123, "macros": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}}, ...] — one entry per recipe given, in any order, exactly the ids given, nothing else.`
-
-    const userMessage =
-      'Recompute accurate whole-recipe macros for each of these recipes:\n\n' +
-      JSON.stringify(batch.map((r) => ({ id: r.id, name: r.name, servings: r.servings, ingredients: r.ingredients })))
-
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      { model: 'claude-sonnet-4-6', max_tokens: 4000, system, messages: [{ role: 'user', content: userMessage }] },
-      { headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 120000 }
+    const macrosById = new Map(
+      corrections
+        .filter((c) => c.id && c.macros && typeof c.macros.kcal === 'number' && typeof c.macros.protein === 'number' && typeof c.macros.carbs === 'number' && typeof c.macros.fat === 'number')
+        .map((c) => [c.id, c.macros])
     )
-    const text = response.data?.content?.[0]?.text || ''
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
+    if (!macrosById.size) return res.status(400).json({ error: 'No valid corrections (each needs id + full macros)' })
 
-    let corrections: { id: number; macros: Macros }[]
-    try {
-      corrections = JSON.parse(cleaned)
-    } catch {
-      corrections = salvageJsonObjects(cleaned) as { id: number; macros: Macros }[]
-      if (!corrections.length) throw new Error('Got invalid JSON back from Claude — try again.')
-    }
-
-    const macrosById = new Map(corrections.filter((c) => c.id && c.macros).map((c) => [c.id, c.macros]))
     const next = library.map((r) => (macrosById.has(r.id) ? { ...r, macros: macrosById.get(r.id)! } : r))
     await redisCommand('SET', 'fuelplan:library:all', JSON.stringify(next))
 
-    return res.json({
-      ok: true,
-      updated: macrosById.size,
-      batchSize: batch.length,
-      remaining: Math.max(0, library.length - (start + batch.length)),
-      nextOffset: start + batch.length,
-      totalLibrarySize: library.length,
-    })
+    const matchedIds = new Set(library.map((r) => r.id))
+    const unmatched = [...macrosById.keys()].filter((id) => !matchedIds.has(id))
+
+    return res.json({ ok: true, updated: macrosById.size, unmatchedIds: unmatched, totalLibrarySize: library.length })
   } catch (err) {
-    return res.status(502).json({ error: (err as Error).message || 'Macro recompute failed.' })
+    return res.status(500).json({ error: (err as Error).message })
   }
 })
 
