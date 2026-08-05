@@ -852,10 +852,17 @@ app.post('/api/claude/generate-plan-v2', requireAuth, async (req: AuthedRequest,
       turnCount++
       const response = await axios.post(
         'https://api.anthropic.com/v1/messages',
-        { model: GEN_MODEL, max_tokens: 4096, system, tools: [SEARCH_RECIPES_TOOL], messages },
+        // max_tokens/timeout both raised during M3 live verification: a
+        // bulk-macro profile's turn hit stop_reason "max_tokens" at the
+        // original 4096 cap (the model's reasoning-before-tool-calls text
+        // got cut off), wasting a turn recovering, then a later turn
+        // genuinely exceeded the original 60s per-call timeout — Sonnet
+        // occasionally needs more headroom for a turn juggling several
+        // tool_use blocks plus explanatory text.
+        { model: GEN_MODEL, max_tokens: 6000, system, tools: [SEARCH_RECIPES_TOOL], messages },
         {
           headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-          timeout: 60000,
+          timeout: 90000,
         }
       )
 
@@ -866,7 +873,14 @@ app.post('/api/claude/generate-plan-v2', requireAuth, async (req: AuthedRequest,
       const toolUses = content.filter((b) => b.type === 'tool_use')
       console.log(`generate-plan-v2: user=${userId} turn=${turnCount} stop_reason=${data.stop_reason} toolCallsThisTurn=${toolUses.length} toolCallsTotal=${toolCallCount + toolUses.length}`)
 
-      if (data.stop_reason === 'tool_use' && toolUses.length) {
+      // Trigger on any complete tool_use blocks present, not strictly
+      // stop_reason === 'tool_use' — a turn that hit stop_reason
+      // "max_tokens" can still contain earlier, fully-formed tool_use
+      // blocks (Anthropic only ever truncates the LAST content block);
+      // gating strictly on the stop_reason string wasted a whole turn
+      // falling through to the text-parse branch on those, seen live
+      // during M3 verification.
+      if (toolUses.length) {
         const toolResults = toolUses.map((tu) => {
           toolCallCount++
           let result: unknown
