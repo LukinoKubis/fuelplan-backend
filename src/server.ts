@@ -709,12 +709,26 @@ function runSearchRecipes(library: LibraryRecipe[], disliked: string[], args: Se
     if (args.minProtein != null && ps.protein < args.minProtein) return false
     return true
   })
-  // Higher protein density first — protein is the macro real recipes vary
-  // most in and the one users most often complain about undershooting
-  // (same rationale as planAssembly.ts's asymmetric protein scoring).
+  // Real bug hit and fixed during M3 live verification: sorting by protein
+  // density here (highest-protein-first) meant the model was ALWAYS shown
+  // the most protein-dense options at the top of every search result,
+  // regardless of whether it asked for a protein floor — it consistently
+  // picked from that biased top slice, overshooting the daily protein
+  // target by 30-100g across a live 3-profile test matrix (vs the
+  // algorithmic picker landing within single-digit grams using the same
+  // library). minProtein already lets the model set an explicit floor when
+  // it wants one; ranking results by protein on top of that double-counts
+  // it. Sort by closeness to the middle of the requested kcal range
+  // instead (a neutral "typical option for this search" ordering) when a
+  // range was given, otherwise leave library order as-is — verified this
+  // removed the systematic overshoot (see fuelplan-mobile#30).
   matches = matches
     .slice()
-    .sort((a, b) => genPerServing(b).protein / Math.max(1, genPerServing(b).kcal) - genPerServing(a).protein / Math.max(1, genPerServing(a).kcal))
+    .sort((a, b) => {
+      if (args.minKcal == null && args.maxKcal == null) return 0
+      const mid = ((args.minKcal ?? args.maxKcal!) + (args.maxKcal ?? args.minKcal!)) / 2
+      return Math.abs(genPerServing(a).kcal - mid) - Math.abs(genPerServing(b).kcal - mid)
+    })
     .slice(0, 15)
   return matches.map((r) => ({
     id: r.id,
@@ -751,7 +765,7 @@ CRITICAL RULES:
 - Every single meal in your final answer MUST use a recipeId that came from an actual search_recipes tool result you received in this conversation. Never invent, guess, or reuse an id from outside a tool result.
 - Days: exactly 7, named "Monday" through "Sunday" in that order, each appearing exactly once.
 - Each day has exactly 4 meals, one each of "breakfast", "lunch", "snack", "dinner" — every slot filled exactly once, no duplicates, no extra slots.
-- Daily macro target (the SAME target applies to every one of the 7 days): ${macros.kcal} kcal, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat. Aim for each day's total (summed across its 4 meals, each recipe's per-serving macros x its servings multiplier) to land close to this — undershooting protein matters more than overshooting it; kcal should be close on both sides.
+- Daily macro target (the SAME target applies to every one of the 7 days): ${macros.kcal} kcal, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat. Before finalizing each day, actually ADD UP the 4 meals' scaled macros (per-serving macros x servings) and check the total. Target bands: kcal within about 5% of ${macros.kcal} in either direction; protein within about 10-15g of ${macros.protein}g — a small overshoot is fine and slightly preferred over undershooting, but overshooting protein by 30g or more is just as wrong as undershooting it by that much, it means you picked recipes/servings poorly, not that you did a good job. Do not chase "more protein is always better" — hit the number, don't maximize past it.
 - Rough per-slot share of the daily target as a starting point (you can deviate from this if it helps hit the day's total): breakfast ~25%, lunch ~30%, snack ~10%, dinner ~35% of kcal, similar split for protein.
 - "servings" in your final answer is a scaling multiplier applied to the recipe's own per-serving macros (e.g. 1.5 means 1.5x the per-serving macros) — use it to fit a recipe to its slot's share of the target, don't just always use 1. Keep it between 0.5 and 3.
 - Meal-prep realism: reuse the same recipeId across multiple days rather than searching for a brand-new recipe every day — limit yourself to at most ${profile.variety} distinct recipeIds per slot across the whole week (e.g. at most ${profile.variety} distinct breakfast recipes total, reused across the 7 days), the same way a real meal-prepper rotates between a few go-to meals instead of cooking something different every single day.
