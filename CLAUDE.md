@@ -73,6 +73,12 @@ GET  /api/auth/me               — requireAuth → { email }
 POST /api/auth/forgot-password  — { email } → always { ok: true } (no email enumeration); no-ops without RESEND_API_KEY
 POST /api/auth/reset-password   — { token, newPassword } → { ok: true }
 POST /api/claude                — requireAuth, decrements credit, proxies to Anthropic
+POST /api/claude/generate-plan-v2 — requireAuth, decrements exactly ONE credit for the whole
+                                    generation (not per-Anthropic-call). Owns its own bounded
+                                    agentic tool-use loop (see "AI plan generation via tool-use"
+                                    below) — fuelplan-mobile's primary "Generate My Plan" path as
+                                    of 2026-08-05, with a mandatory client-side fallback to its
+                                    algorithmic picker on any failure.
 POST /api/usage                 — requireAuth → remaining credits for the authed user
 POST /api/history/save          — requireAuth, saves plan to Redis (max 5, newest first)
 POST /api/history/get           — requireAuth, metadata list (id, savedAt, planName, macros)
@@ -432,6 +438,103 @@ structured, not a short free-text answer), check `MAX_MESSAGE_CONTENT_LENGTH`
 before assuming a JSON-parse failure is a prompt-compliance problem —
 verify what request actually left the client isn't already the truncated
 version.
+
+## AI plan generation via tool-use (`POST /api/claude/generate-plan-v2`)
+Added 2026-08-05 (fuelplan-backend#1) as fuelplan-mobile's third
+generation of plan generation: full-AI (invented meals, abandoned) →
+Library M5 (deterministic algorithmic picker, zero AI) → this. See
+`fuelplan-mobile/CLAUDE.md`'s "Plan generation (M1-M3, AI tool-use)"
+section for the full picture including live-verification results —
+this section covers the backend implementation specifics.
+
+**Why this is a separate endpoint, not a `/api/claude` caller**:
+`/api/claude` decrements one credit PER HTTP call. A single plan
+generation here legitimately needs several internal Anthropic round
+trips (the agentic tool-use loop below) — reusing `/api/claude` would
+over-charge credits per generation. This endpoint owns the whole loop
+server-side and decrements exactly ONE credit for the whole thing,
+regardless of how many internal Anthropic calls it took.
+
+**Design**: gives Claude a `search_recipes` tool (Anthropic
+tool-use/function-calling) backed by the real shared library (`getLibrary()`,
+same data `/api/library/list` serves) instead of asking it to invent
+~28 meals of raw JSON in one response — the earlier full-AI approach's
+actual failure mode (see the mobile repo's postmortem). Claude can only
+ever reference a recipe id that came from an actual tool result; the
+final response (`{days:[{day, meals:[{slot, recipeId, servings}]}]}`) is
+validated server-side (`validateGeneratedPlan` — every recipeId real AND
+category-matched, all 7 days/4 slots present, no dupes) before returning
+200. On one validation failure the model gets a single bounded
+self-correction turn before falling back to `502 {error: 'Could not
+assemble a valid plan, try again'}`.
+
+**Bounded agentic loop**: `MAX_TOOL_CALLS = 20`, `MAX_TURNS = 12` —
+bounds worst-case cost/latency per generation on a shared,
+budget-conscious Anthropic account (see "The ANTHROPIC_API_KEY is for
+real app users" below). Per-call `max_tokens: 6000`, `timeout: 90000`
+(both raised from initial values of 4096/60000 during M3 live
+verification — see below). Tool-call/turn counts are logged to stdout
+per generation (`generate-plan-v2: user=... turn=... stop_reason=...
+toolCallsThisTurn=... toolCallsTotal=...`) for cost/behavior visibility —
+check `railway logs` after a live test to see the actual shape of a run.
+
+**`search_recipes`'s dietary filtering is structural, not prompted**:
+disliked ingredients (`genConflictsWithDislikes`, same keyword-match
+spirit as `planAssembly.ts`'s client-side version) are filtered out
+INSIDE the tool implementation before results ever reach the model — a
+disliked recipe can never even appear in a tool result, let alone get
+picked. Verified live (M3): 0 dietary violations across a 4-profile test
+matrix including a dedicated restrictions+dislikes profile, matching the
+expectation that this is more reliable than the old free-AI approach's
+post-hoc "please avoid this" prompting.
+
+**Real bug hit and fixed, M3 live verification (2026-08-05): systematic
+protein overshoot.** `search_recipes` originally sorted every result by
+protein density (highest first) — the model was always shown the most
+protein-dense options at the top of its search results regardless of
+whether it asked for a protein floor via `minProtein`, and consistently
+picked from that biased top slice. Confirmed live across a 3-profile
+matrix: daily protein landed 30-100g over target (vs the algorithmic
+picker's single-digit-gram accuracy on the same profiles/library).
+`minProtein` already lets the model set an explicit floor when it wants
+one — ranking on top of that double-counts protein. Fixed by sorting on
+closeness to the middle of the requested kcal range instead (a neutral
+"typical option for this search" ordering) when a range was given,
+otherwise leaving library order as-is, PLUS tightening the system
+prompt's macro guidance from an open-ended "undershooting protein matters
+more than overshooting" to explicit numeric target bands (kcal within
+~5%, protein within ~10-15g, with overshooting by 30g+ called out as
+equally wrong as undershooting by that much). Re-verified on the
+aggressive-cut profile after the fix: protein overshoot dropped from
++33g to +8g. **Lesson**: when a tool returns a ranked/sorted subset to an
+LLM, the ranking criterion itself is an implicit instruction the model
+will over-index on — don't rank by the same metric you're trying to hit
+a target on, or you bias the model toward extremizing it.
+
+**Real, still-open reliability gap found live, same verification pass**:
+on a "bulk"/high-macro test profile specifically (needs more
+meals/servings math, more tool calls), a single loop turn twice took
+long enough to exceed even the raised 90s per-call timeout, surfacing as
+a client-facing 504 after ~11 accumulated tool calls. Not fully solved —
+raising `max_tokens`/`timeout` and fixing a related bug (see next
+paragraph) helped but didn't eliminate it on this specific profile
+shape. Fully covered by fuelplan-mobile's mandatory fallback (verified
+separately via deterministic network-interception testing that the
+fallback triggers cleanly and produces a normal plan), so not user-facing
+data loss, just an occasional silent downgrade to the algorithmic picker
+on complex profiles. See fuelplan-mobile#31 for follow-up ideas
+(fewer/broader tool calls per turn, smaller tool-result payloads,
+streaming to detect a stalled turn earlier).
+
+**Related real bug hit and fixed in the same pass**: the tool-use branch
+of the loop originally only triggered on `stop_reason === 'tool_use'`
+exactly. A turn that hit `stop_reason: 'max_tokens'` (the model's
+reasoning-before-tool-calls text got cut off) still contained earlier,
+complete `tool_use` blocks — Anthropic only ever truncates the LAST
+content block — but the strict string check sent it down the
+text-parsing branch instead, wasting a whole turn. Fixed by triggering
+on the presence of any `tool_use` blocks in the response, regardless of
+the exact `stop_reason` string.
 
 ## Adding new endpoints
 Follow the existing pattern in `src/server.ts`:
