@@ -2007,6 +2007,68 @@ async function decrementRemaining(userId: string): Promise<void> {
   await redisCommand('DECR', 'fuelplan:remaining:' + userId)
 }
 
+// ── RevenueCat webhook (native IAP, issue #19) ──────────────────────────────────
+// SCAFFOLD: real product creation in App Store Connect/Play Console is
+// blocked on Apple Developer Program/Google Play Console enrollment (same
+// blocker as #6), so RC_PRODUCT_MAP's keys are placeholders matching
+// fuelplan-mobile's src/lib/purchases.ts CREDIT_PRODUCT_IDS constants, not
+// real configured products yet. This endpoint is inert until
+// REVENUECAT_WEBHOOK_AUTH is set on Railway (never hardcode it) — RevenueCat
+// lets you configure an arbitrary Authorization header value per webhook in
+// its dashboard, simpler than Lemon Squeezy's HMAC-signature scheme above
+// since RevenueCat doesn't require raw-body signature verification, so this
+// can sit after the global express.json() unlike the LS webhook.
+// fuelplan-mobile's purchases.ts configures RevenueCat's appUserID as our
+// own userId at login (Purchases.configure({ appUserID: userId })), so
+// app_user_id below already IS our internal userId — no separate mapping
+// step needed, unlike a from-scratch RevenueCat integration.
+const RC_PRODUCT_MAP: Record<string, number | undefined> = {
+  fuelplan_credits_5: 5,
+  fuelplan_credits_10: 10,
+  fuelplan_credits_20: 20,
+}
+const RC_CREDITING_EVENTS = new Set(['INITIAL_PURCHASE', 'NON_RENEWING_PURCHASE'])
+
+app.post('/api/webhook/revenuecat', async (req: Request, res: Response) => {
+  const expectedAuth = process.env.REVENUECAT_WEBHOOK_AUTH
+  if (!expectedAuth) {
+    console.error('RC webhook: REVENUECAT_WEBHOOK_AUTH not configured')
+    return res.status(503).json({ error: 'Not configured' })
+  }
+  if (req.headers.authorization !== expectedAuth) {
+    console.error('RC webhook: auth mismatch')
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const event = (req.body as any)?.event
+  if (!event || !RC_CREDITING_EVENTS.has(event.type)) return res.json({ received: true })
+
+  const userId = event.app_user_id as string | undefined
+  const productId = event.product_id as string | undefined
+  const credits = productId ? RC_PRODUCT_MAP[productId] : undefined
+
+  if (!userId || !credits) {
+    console.error('RC webhook: missing app_user_id or unrecognised product_id', { userId, productId })
+    return res.json({ received: true })
+  }
+
+  const user = await getUserById(userId)
+  if (!user) {
+    console.error('RC webhook: unknown app_user_id', userId)
+    return res.json({ received: true })
+  }
+
+  try {
+    await redisCommand('INCRBY', 'fuelplan:remaining:' + userId, credits)
+    console.log(`RC: credited ${user.email} (${userId}) with ${credits} credits (product ${productId})`)
+  } catch (err) {
+    console.error('Redis error in RC webhook:', err)
+    return res.status(500).json({ error: 'Redis error' })
+  }
+
+  res.json({ received: true })
+})
+
 async function getHistory(userId: string): Promise<HistoryEntry[]> {
   const raw = await redisCommand('GET', 'fuelplan:history:' + userId)
   if (!raw) return []

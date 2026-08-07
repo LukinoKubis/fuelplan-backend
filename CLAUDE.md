@@ -111,6 +111,8 @@ POST /api/account/delete        — requireAuth, deletes every per-user Redis ke
 POST /api/feedback/submit       — requireAuth, rate-limited 5/hour, stores to
                                     fuelplan:feedback:all (max 500, newest first), best-effort
                                     emails FEEDBACK_NOTIFY_EMAIL via Resend if configured
+POST /api/webhook/revenuecat    — SCAFFOLD, see "RevenueCat native IAP" below. Inert (503)
+                                    until REVENUECAT_WEBHOOK_AUTH is set.
 
 Removed in the auth migration (do not re-add): `/api/register-code`,
 `/api/account/link-email`, `/api/account/recover`, the `ACTIVATION_CODES`
@@ -162,6 +164,10 @@ SUPABASE_SERVICE_ROLE_KEY   — service role key (server-side only, bypasses RLS
                               recipe cover photos. Optional: missing/unset just means photo saves
                               keep the base64 fallback instead of uploading. See "Recipe cover
                               photo" below.
+REVENUECAT_WEBHOOK_AUTH     — SCAFFOLD, not yet set. Shared-secret string RevenueCat sends back
+                              verbatim in the Authorization header on every webhook call (configured
+                              in RevenueCat's dashboard, not a signature scheme like LS_WEBHOOK_SECRET).
+                              See "RevenueCat native IAP" below — endpoint 503s until this is set.
 
 ## Push notifications
 Swapped from Web Push/VAPID to Expo's push service on 2026-07-24, as part
@@ -539,6 +545,39 @@ content block — but the strict string check sent it down the
 text-parsing branch instead, wasting a whole turn. Fixed by triggering
 on the presence of any `tool_use` blocks in the response, regardless of
 the exact `stop_reason` string.
+
+## RevenueCat native IAP (issue #19) — SCAFFOLD, not live
+Apple/Google both require native in-app purchase for a consumable digital
+good like plan credits — the current LemonSqueezy web checkout
+(`/api/create-checkout`, still the live path everywhere) would get the
+app rejected on store submission. This is scaffolding only: real product
+creation in App Store Connect/Google Play Console is blocked on the same
+Developer Program/Play Console enrollment as issue #6, so nothing here
+processes a real purchase yet.
+
+`POST /api/webhook/revenuecat` mirrors the Lemon Squeezy webhook's job
+(credit the right user's `fuelplan:remaining:USERID` on a paid event) but
+simpler: RevenueCat's auth is a shared-secret string it echoes back in
+the `Authorization` header (set in RevenueCat's dashboard), not an
+HMAC-signed raw body, so this route sits after the global
+`express.json()` instead of needing its own raw-body parser like the LS
+webhook does. `RC_PRODUCT_MAP` maps placeholder product ids
+(`fuelplan_credits_5/10/20`, matching `fuelplan-mobile`'s
+`src/lib/purchases.ts` `CREDIT_PRODUCT_IDS`) to credit counts — swap
+these for real product identifiers once they exist in Play
+Console/App Store Connect. 503s until `REVENUECAT_WEBHOOK_AUTH` is set.
+
+**appUserID mapping**: `purchases.ts` configures RevenueCat with our own
+`userId` as its `appUserID` at login time, so `event.app_user_id` in the
+webhook payload already IS our internal userId — no separate id-mapping
+table needed, unlike a from-scratch RevenueCat integration would require.
+
+**Not done, needed before this goes live**: real product creation in both
+stores (blocked), setting `REVENUECAT_WEBHOOK_AUTH` + wiring a purchase
+UI into `fuelplan-mobile`'s Settings screen (deliberately not done yet —
+wiring a live purchase button to placeholder product ids that don't exist
+would break for real users; see that repo's `src/lib/purchases.ts` for
+the client-side half of this scaffold).
 
 ## Adding new endpoints
 Follow the existing pattern in `src/server.ts`:
