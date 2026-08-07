@@ -1105,20 +1105,26 @@ app.post('/api/recipes/delete', requireAuth, async (req: AuthedRequest, res: Res
 })
 
 // Reads spoken audio + on-screen text from a TikTok video the caption alone
-// doesn't cover (see videoExtract.ts for how, and its real caveats). Gated
-// on the user having generation credits left — same abuse-prevention
-// reasoning as /api/claude — but does NOT itself decrement, since the
-// actual recipe-extraction call that follows (through /api/claude) already
-// does. TikTok only; Instagram isn't supported yet (see videoExtract.ts).
+// doesn't cover (see videoExtract.ts for how, and its real caveats). Does
+// NOT decrement a generation credit -- the actual recipe-extraction call
+// that follows (through /api/claude) already does. Real bug hit and fixed
+// 2026-08-07: this used to ALSO refuse to run at all once a user's plan
+// credits hit zero (same "remaining <= 0" check /api/claude uses), even
+// though reading a video/caption never spent one -- a user out of monthly
+// plan generations couldn't even read a caption to build a recipe by hand,
+// which broke a genuinely free, non-AI-generation feature for an unrelated
+// reason. Rate-limited instead (same pattern /api/claude/prep-and-shopping
+// already uses for its own free-but-abuse-prevented endpoint) -- bounds
+// scraping abuse without tying it to a quota this feature doesn't consume.
+// TikTok only; Instagram isn't supported yet (see videoExtract.ts).
 app.post('/api/recipes/extract-video', requireAuth, async (req: AuthedRequest, res: Response) => {
   const userId = req.userId!
   const { url } = req.body as { url?: string }
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'No url' })
   if (!/tiktok\.com/i.test(url)) return res.status(400).json({ error: 'Only TikTok links are supported for video reading right now.' })
 
-  const remaining = await getRemaining(userId)
-  if (remaining !== null && remaining <= 0) {
-    return res.status(402).json({ error: 'Plan limit reached', message: 'You have used all your meal plans. Top up in Settings to keep generating.' })
+  if (!rateLimit('extract-video:' + userId, 15, 3600000)) {
+    return res.status(429).json({ error: 'Too many video reads this hour — try again shortly.' })
   }
 
   try {
@@ -1131,17 +1137,17 @@ app.post('/api/recipes/extract-video', requireAuth, async (req: AuthedRequest, r
 
 // Reads an Instagram post/reel's caption — see instagramExtract.ts for how
 // and its real caveats (login-walled posts still fail, by design, not a
-// bug). Same abuse-prevention gating as extract-video: checks remaining
-// credits, doesn't itself decrement.
+// bug). Same fix/reasoning as extract-video above: rate-limited, not
+// credit-gated — this doesn't decrement a plan credit, so it shouldn't be
+// blocked by one being at zero either.
 app.post('/api/recipes/extract-instagram-caption', requireAuth, async (req: AuthedRequest, res: Response) => {
   const userId = req.userId!
   const { url } = req.body as { url?: string }
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'No url' })
   if (!/instagram\.com/i.test(url)) return res.status(400).json({ error: 'Only Instagram links are supported here.' })
 
-  const remaining = await getRemaining(userId)
-  if (remaining !== null && remaining <= 0) {
-    return res.status(402).json({ error: 'Plan limit reached', message: 'You have used all your meal plans. Top up in Settings to keep generating.' })
+  if (!rateLimit('extract-ig:' + userId, 15, 3600000)) {
+    return res.status(429).json({ error: 'Too many caption reads this hour — try again shortly.' })
   }
 
   try {
