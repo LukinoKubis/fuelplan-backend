@@ -511,20 +511,24 @@ LLM, the ranking criterion itself is an implicit instruction the model
 will over-index on — don't rank by the same metric you're trying to hit
 a target on, or you bias the model toward extremizing it.
 
-**Real, still-open reliability gap found live, same verification pass**:
-on a "bulk"/high-macro test profile specifically (needs more
-meals/servings math, more tool calls), a single loop turn twice took
-long enough to exceed even the raised 90s per-call timeout, surfacing as
-a client-facing 504 after ~11 accumulated tool calls. Not fully solved —
-raising `max_tokens`/`timeout` and fixing a related bug (see next
-paragraph) helped but didn't eliminate it on this specific profile
-shape. Fully covered by fuelplan-mobile's mandatory fallback (verified
-separately via deterministic network-interception testing that the
-fallback triggers cleanly and produces a normal plan), so not user-facing
-data loss, just an occasional silent downgrade to the algorithmic picker
-on complex profiles. See fuelplan-mobile#31 for follow-up ideas
-(fewer/broader tool calls per turn, smaller tool-result payloads,
-streaming to detect a stalled turn earlier).
+**Reliability gap found live 2026-08-05, fixed 2026-08-07 (fuelplan-mobile#31,
+commit ad559f1)**: on a "bulk"/high-macro test profile specifically (needs
+more meals/servings math, more tool calls), a single loop turn twice took
+long enough to exceed even the raised 90s per-call timeout, surfacing as a
+client-facing 504 after ~11 accumulated tool calls by turn 3 — large
+accumulated context (15-result `tool_result` blocks stacking up across
+that many calls) was a real contributor. Fixed by lowering
+`search_recipes`'s per-call result cap from 15 to 8 and tightening the
+system prompt to push toward one deliberately wide kcal/protein range per
+slot instead of several narrow re-searches, plus dropping explanatory
+prose before tool calls. Re-verified live against the exact same bulk
+profile (3300 kcal/210p/380c/95f, variety=3): 200 OK in 71.5s, only 4
+total tool calls across 3 turns (vs. ~11 before) — see
+`generate-plan-v2: ... DONE turns=3 toolCalls=4 success=true` in the
+closing comment on fuelplan-mobile#31 for the full log. Still fully
+covered by fuelplan-mobile's mandatory fallback to the algorithmic picker
+regardless (verified separately via deterministic network-interception
+testing), so this was a reliability/latency fix, not a data-loss fix.
 
 **Related real bug hit and fixed in the same pass**: the tool-use branch
 of the loop originally only triggered on `stop_reason === 'tool_use'`
